@@ -19,7 +19,7 @@
                      目录，则以目标路径作为父目录，否则引发shutil.Error
       目标中间路径不存在：
         os.rename:   引发FileNotFoundError
-        os.renames:  创建，括任何中间目录
+        os.renames:  创建，包括任何中间目录
         shutil.move: 引发FileNotFoundError
 
 

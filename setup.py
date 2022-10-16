@@ -10,7 +10,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     name='gqylpy_filesystem',
-    version='1.0.alpha1',
+    version='1.0.alpha2',
     author='竹永康',
     author_email='gqylpy@outlook.com',
     license='Apache 2.0',

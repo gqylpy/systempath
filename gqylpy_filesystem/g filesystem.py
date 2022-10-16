@@ -17,18 +17,18 @@ import os
 import sys
 import shutil
 
-from os import PathLike
-
 from os.path import (
-    basename, dirname ,  abspath   ,   join,
-    split   , splitext,  splitdrive,
-    isabs   , exists  ,
-    getsize , getctime,  getmtime  ,   getatime
+    basename, dirname , abspath   , join    ,
+    split   , splitext, splitdrive,
+    isabs   , isfile  , exists    , lexists ,
+    getsize , getctime, getmtime  , getatime
 )
 
-from typing import TextIO, Optional, Union
+from typing import TextIO, Union, Literal, Tuple, Callable, Optional
 
-Path = Union[bytes, str, PathLike[bytes], PathLike[str]]
+import gqylpy_exception as ge
+
+PathLink = BytesOrStr = Union[bytes, str]
 
 
 class File:
@@ -36,112 +36,119 @@ class File:
 
     def __init__(
             self,
-            file:       Path,
+            path: PathLink,
             /, *,
-            ftype:      str   = None,
-            auto_ftype: bool  = False
+            ftype: Literal['txt', 'json', 'yaml', 'csv', 'obj']   = None,
+            auto_ftype: bool  = False,
     ):
-        self.file  = file
+        if not isinstance(path, (str, bytes)):
+            raise ge.ParamTypeError(
+                'parameter "file" type can only be "bytes" or "str".')
+        self.path  = path
         self.ftype = ftype
 
-    def open(self, **kw):
+    def open(self, **kw) -> TextIO:
         if not self.handle:
-            self.handle = open(self.file, **kw)
+            self.handle = open(self.path, **kw)
         return self.handle
 
-    def __enter__(self):
+    def __enter__(self) -> 'File':
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         pass
 
-    def __del__(self):
-        if self.handle:
-            self.handle.close()
+    def __del__(self) -> None:
+        self.handle and self.handle.close()
 
     @property
-    def basename(self) -> str:
-        return basename(self.file)
+    def basename(self) -> BytesOrStr:
+        return basename(self.path)
 
     @property
-    def basename_not_extension(self) -> str:
-        return splitext(self.file)[0]
+    def dirname(self) -> BytesOrStr:
+        return dirname(self.path)
+
+    def dirnamel(self, level: int) -> BytesOrStr:
+        if self.path.__class__ is str:
+            sep: str   = os.sep
+        else:
+            sep: bytes = os.sep.encode()
+        return self.path.rsplit(sep, level)[0]
 
     @property
-    def extension(self) -> Union[bytes, str]:
-        return splitext(self.file)[1]
+    def abspath(self) -> BytesOrStr:
+        return abspath(self.path)
+
+    def split(self) -> Tuple[BytesOrStr, BytesOrStr]:
+        return split(self.path)
+
+    def splitext(self) -> Tuple[BytesOrStr, BytesOrStr]:
+        return splitext(self.path)
 
     @property
-    def dirname(self) -> str:
-        return dirname(self.file)
+    def extension(self) -> BytesOrStr:
+        return splitext(self.path)[1]
 
-    def dirnamel(self, *, level: int = 1) -> str:
-        directory: str = self.file
-        for _ in range(level):
-            directory = dirname(self.file)
-        return directory
-
-    @property
-    def abspath(self) -> str:
-        return self.file if isabs(self.file) else abspath(self.file)
-
-    def split(self) -> tuple:
-        return split(self.file)
-
-    def splitext(self) -> tuple:
-        return splitext(self.file)
-
-    def splitdrive(self) -> tuple:
-        return splitdrive(self.file)
+    def splitdrive(self) -> Tuple[BytesOrStr, BytesOrStr]:
+        return splitdrive(self.path)
 
     def isabs(self) -> bool:
-        return isabs(self.file)
+        return isabs(self.path)
+
+    def isfile(self) -> bool:
+        return isfile(self.path)
 
     def exists(self) -> bool:
-        return exists(self.file)
+        return exists(self.path)
 
-    def rename(self, dst: Path, /):
-        if not abspath(dst):
-            dst: Path = join(dirname(dst))
-        os.rename(self.file, dst)
-        self.file = abspath(dst)
+    def lexists(self) -> bool:
+        return lexists(self.path)
 
-    def move(self, dst: Path, /, *, copy_function=shutil.copy2) -> Path:
-        """
-        移动文件时，若目标路径是相对路径，将以当前工作目录作为上级路径（`os.getcwd()`的返回值）
-        """
-        dst: Path = shutil.move(self.file, dst, copy_function=copy_function)
-        self.file = dst
+    def rename(self, dst: PathLink, /) -> PathLink:
+        dst: PathLink = self.abspath_if_not(dst)
+        os.rename(self.path, dst)
+        self.path = dst
         return dst
 
-    def copy(self, dst: Path, /, *, follow_symlinks: bool = True) -> Path:
-        """
-        目标路径必须是一个文件，目标存在则覆盖。如目标是源文件则引发shutil.SameFileError。
-        返回文件的目的地。
-        复制文件时，若目标路径是相对路径，将以当前工作目录作为上级路径（`os.getcwd()`的返回值）
-        """
-        return shutil.copyfile(self.file, dst, follow_symlinks=follow_symlinks)
+    def move(
+            self,
+            dst: PathLink,
+            /, *,
+            copy_function: Callable[[PathLink, PathLink], None] = shutil.copy2
+    ) -> PathLink:
+        dst: PathLink = self.abspath_if_not(dst)
+        dst: PathLink = shutil.move(self.path, dst, copy_function)
+        self.path = dst
+        return dst
 
-    def copyobj(self, fdst: TextIO, /):
-        """
-        将文件内容复制到目的地，若目的地不可写，将引发io.UnsupportedOperation
-        """
-        with open(self.file) as fsrc:
+    def copy(
+            self,
+            dst: PathLink,
+            /, *,
+            follow_symlinks: bool = True
+    ) -> PathLink:
+        return shutil.copyfile(
+            self.path, self.abspath_if_not(dst), follow_symlinks=follow_symlinks
+        )
+
+    def copyobj(self, fdst: TextIO, /) -> None:
+        with open(self.path) as fsrc:
             shutil.copyfileobj(fsrc, fdst)
 
     def truncate(self, length: int):
-        os.truncate(self.file, length)
+        os.truncate(self.path, length)
 
     def clear(self):
-        os.truncate(self.file, 0)
+        os.truncate(self.path, 0)
 
     if sys.platform == 'win32':
         def mknod(self, *_, ignore_err: bool = False, **__):
-            if exists(self.file):
+            if exists(self.path):
                 if not ignore_err:
-                    raise FileExistsError(f'file "{self.file}" already exists.')
+                    raise FileExistsError(f'file "{self.path}" already exists.')
             else:
-                open(self.file, 'w').close()
+                open(self.path, 'w').close()
     else:
         def mknod(
                 self,
@@ -152,33 +159,33 @@ class File:
                 ignore_err: bool          = False
         ):
             try:
-                os.mknod(self.file, mode, device, dir_fd=dir_fd)
+                os.mknod(self.path, mode, device, dir_fd=dir_fd)
             except FileExistsError:
                 if not ignore_err:
                     raise
 
     def remove(self):
-        os.remove(self.file)
+        os.remove(self.path)
 
     @property
     def stat(self):
-        return os.stat(self.file)
+        return os.stat(self.path)
 
     @property
     def size(self):
-        return getsize(self.file)
+        return getsize(self.path)
 
     @property
     def create_time(self):
-        return getctime(self.file)
+        return getctime(self.path)
 
     @property
     def modify_time(self):
-        return getmtime(self.file)
+        return getmtime(self.path)
 
     @property
     def access_time(self):
-        return getatime(self.file)
+        return getatime(self.path)
 
     def chmod(self, *a, **kw):
         raise NotImplementedError
@@ -190,4 +197,9 @@ class File:
         raise NotImplementedError
 
     def md5(self):
-        pass
+        raise NotImplementedError
+
+    def abspath_if_not(self, path: PathLink) -> PathLink:
+        if not isabs(path):
+            path: PathLink = join(dirname(self.path), path)
+        return path
