@@ -13,9 +13,19 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-import os
 import sys
 import shutil
+import functools
+
+from os import (
+    sep, stat, stat_result, system, popen,
+    rename, remove, chmod, truncate, access
+)
+
+try:
+    from os import mknod, chown, chflags
+except ImportError:
+    pass
 
 from os.path import (
     basename, dirname , abspath   , join    ,
@@ -24,7 +34,7 @@ from os.path import (
     getsize , getctime, getmtime  , getatime
 )
 
-from typing import TextIO, Union, Literal, Tuple, Callable, Optional
+from typing import TextIO, Union, Literal, Tuple, Callable, Optional, Any
 
 import gqylpy_exception as ge
 
@@ -32,14 +42,12 @@ PathLink = BytesOrStr = Union[bytes, str]
 
 
 class File:
-    handle: TextIO = None
 
     def __init__(
             self,
-            path: PathLink,
+            path:  PathLink,
             /, *,
-            ftype: Literal['txt', 'json', 'yaml', 'csv', 'obj']   = None,
-            auto_ftype: bool  = False,
+            ftype: Literal['txt', 'json', 'yaml', 'csv', 'obj'] = None
     ):
         if not isinstance(path, (str, bytes)):
             raise ge.ParamTypeError(
@@ -47,19 +55,37 @@ class File:
         self.path  = path
         self.ftype = ftype
 
-    def open(self, **kw) -> TextIO:
-        if not self.handle:
-            self.handle = open(self.path, **kw)
-        return self.handle
+    @staticmethod
+    def changeable_else_raise(
+            func: Callable[['File', str, Optional[Any]], None]
+    ) -> Callable:
+        unchangeable = 'path',
 
-    def __enter__(self) -> 'File':
-        return self
+        @functools.wraps(func)
+        def inner(self: 'File', name: str, *a) -> None:
+            if (
+                    name in unchangeable and
+                    sys._getframe(1).f_globals['__name__'] != __name__
+            ):
+                raise ge[f'{func.__name__[2:-2].capitalize()}Error'](
+                    f'attribute "{name}" is unchangeable.')
+            func(self, name, *a)
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        return inner
+
+    @changeable_else_raise
+    def __setattr__(self, name: str, value: Any):
+        super().__setattr__(name, value)
+
+    @changeable_else_raise
+    def __delattr__(self, name: str):
+        super().__delattr__(name)
+
+    def __del__(self):
         pass
 
-    def __del__(self) -> None:
-        self.handle and self.handle.close()
+    def open(self, **kw) -> TextIO:
+        raise NotImplementedError
 
     @property
     def basename(self) -> BytesOrStr:
@@ -70,11 +96,10 @@ class File:
         return dirname(self.path)
 
     def dirnamel(self, level: int) -> BytesOrStr:
-        if self.path.__class__ is str:
-            sep: str   = os.sep
-        else:
-            sep: bytes = os.sep.encode()
-        return self.path.rsplit(sep, level)[0]
+        return self.path.rsplit(
+            sep if self.path.__class__ is str else sep.encode(),
+            maxsplit=level
+        )[0]
 
     @property
     def abspath(self) -> BytesOrStr:
@@ -107,13 +132,13 @@ class File:
 
     def rename(self, dst: PathLink, /) -> PathLink:
         dst: PathLink = self.abspath_if_not(dst)
-        os.rename(self.path, dst)
+        rename(self.path, dst)
         self.path = dst
         return dst
 
     def move(
             self,
-            dst: PathLink,
+            dst:           PathLink,
             /, *,
             copy_function: Callable[[PathLink, PathLink], None] = shutil.copy2
     ) -> PathLink:
@@ -124,77 +149,147 @@ class File:
 
     def copy(
             self,
-            dst: PathLink,
+            dst:             PathLink,
             /, *,
-            follow_symlinks: bool = True
+            follow_symlinks: bool     = True
     ) -> PathLink:
         return shutil.copyfile(
-            self.path, self.abspath_if_not(dst), follow_symlinks=follow_symlinks
+            src=self.path,
+            dst=self.abspath_if_not(dst),
+            follow_symlinks=follow_symlinks
         )
 
     def copyobj(self, fdst: TextIO, /) -> None:
         with open(self.path) as fsrc:
             shutil.copyfileobj(fsrc, fdst)
 
-    def truncate(self, length: int):
-        os.truncate(self.path, length)
+    def truncate(self, length: int) -> None:
+        truncate(self.path, length)
 
-    def clear(self):
-        os.truncate(self.path, 0)
+    def clear(self) -> None:
+        truncate(self.path, 0)
 
     if sys.platform == 'win32':
-        def mknod(self, *_, ignore_err: bool = False, **__):
-            if exists(self.path):
-                if not ignore_err:
-                    raise FileExistsError(f'file "{self.path}" already exists.')
-            else:
+        def mknod(
+                self,
+                mode:          int  = 0o600,
+                *_,
+                ignore_exists: bool = False,
+                **__
+        ) -> None:
+            if not exists(self.path):
                 open(self.path, 'w').close()
+                chmod(self.path, mode)
+            elif not ignore_exists:
+                raise FileExistsError(f'file "{self.path}" already exists.')
     else:
         def mknod(
                 self,
-                mode:   int = None,
-                device: int = None,
+                mode:          int           = None,
                 *,
-                dir_fd:     Optional[int] = None,
-                ignore_err: bool          = False
-        ):
+                device:        int           = 0,
+                dir_fd:        Optional[int] = None,
+                ignore_exists: bool          = False
+        ) -> None:
             try:
-                os.mknod(self.path, mode, device, dir_fd=dir_fd)
+                mknod(self.path, mode, device, dir_fd=dir_fd)
             except FileExistsError:
-                if not ignore_err:
+                if not ignore_exists:
                     raise
 
-    def remove(self):
-        os.remove(self.path)
+    def remove(self) -> None:
+        remove(self.path)
 
     @property
-    def stat(self):
-        return os.stat(self.path)
+    def stat(self) -> stat_result:
+        return stat(self.path)
 
     @property
-    def size(self):
+    def size(self) -> int:
         return getsize(self.path)
 
     @property
-    def create_time(self):
+    def create_time(self) -> float:
         return getctime(self.path)
 
     @property
-    def modify_time(self):
+    def modify_time(self) -> float:
         return getmtime(self.path)
 
     @property
-    def access_time(self):
+    def access_time(self) -> float:
         return getatime(self.path)
 
-    def chmod(self, *a, **kw):
-        raise NotImplementedError
+    def chmod(
+            self,
+            mode:            int,
+            *,
+            dir_fd:          Optional[int] = None,
+            follow_symlinks: bool          = True
+    ) -> None:
+        chmod(
+            path           =self.path,
+            mode           =mode,
+            dir_fd         =dir_fd,
+            follow_symlinks=follow_symlinks
+        )
 
-    def chown(self, *a, **kw):
-        raise NotImplementedError
+    def access(
+            self,
+            mode:            int,
+            *,
+            dir_fd:          Optional[int] = None,
+            effective_ids:   bool          = False,
+            follow_symlinks: bool          = True
+    ) -> bool:
+        return access(
+            path           =self.path,
+            mode           =mode,
+            dir_fd         =dir_fd,
+            effective_ids  =effective_ids,
+            follow_symlinks=follow_symlinks
+        )
 
-    def chflags(self, *a, **kw):
-        raise NotImplementedError
+    if sys.platform != 'win32':
+        def chown(
+                self,
+                uid:             int,
+                gid:             int,
+                *,
+                dir_fd:          Optional[int] = int,
+                follow_symlinks: bool          = True
+        ) -> None:
+            return chown(
+                path           =self.path,
+                uid            =uid,
+                gid            =gid,
+                dir_fd         =dir_fd,
+                follow_symlinks=follow_symlinks
+            )
+
+        def chflags(self):
+            raise NotImplementedError
+
+        def chattr(self, operator: Literal['+', '-', '='], attrs: str) -> None:
+            if operator not in ('+', '-', '='):
+                raise ge.ChattrOperatorError(
+                    f'Unsupported operation "{operator}", only "+", "-" or "=".'
+                )
+            c: str = f'chattr {operator}{attrs} {self.path}'
+            if system(f'sudo {c} &>/dev/null'):
+                raise ge.ChattrExecuteError(c)
+
+        def lsattr(self) -> str:
+            c: str = f'lsattr {self.path}'
+            attrs: str = popen(
+                "sudo %s 2>/dev/null | awk '{print $1}'" % c
+            ).read()[:-1]
+            if len(attrs) != 16:
+                raise ge.LsattrExecuteError(c)
+            return attrs
+
+        def exattr(self, attr: str, /) -> bool:
+            return attr in self.lsattr()
 
     def md5(self):
         raise NotImplementedError

@@ -9,8 +9,8 @@ with open('requirements.txt') as f:
     requires = [str(x) for x in pkg_resources.parse_requirements(f)]
 
 setuptools.setup(
-    name='gqylpy_filesystem',
-    version='1.0.alpha2',
+    name=g.__name__,
+    version='1.0.alpha3',
     author='竹永康',
     author_email='gqylpy@outlook.com',
     license='Apache 2.0',
