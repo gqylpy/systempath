@@ -10,7 +10,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
     name=g.__name__,
-    version='1.0.alpha3',
+    version='1.0.alpha4',
     author='竹永康',
     author_email='gqylpy@outlook.com',
     license='Apache 2.0',
@@ -36,6 +36,7 @@ setuptools.setup(
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10'
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11'
     ]
 )

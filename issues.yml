@@ -1,5 +1,5 @@
 - issue: "关于文件移动或重命名，Python中内置了多种方案，我们如何选择"
-  location: "gqylpy_filesystem.g filesystem.File.{rename,move}"
+  location: "gqylpy_filesystem.File.{rename,renames,replace,move}"
   create: 2022-10-07
   labels: question
   status: Processed
@@ -45,3 +45,34 @@
       综合分析，我们决定使用 `os.rename` 作为重命名方法，它是三者中最基础的，轻量级的，运行速度
       最快。使用 `shutil.move` 作为移动方法，它类似于Unix系统的 `mv` 命令，功能更全面，且更容
       易被大众所接受。另，前者亦可移动，后者亦可重命名。
+
+    2022-10-30: |
+      在经过长时间的“回味”，以及更多的思考和思想斗争后，我们放弃原方案。原方案中存在我们片面的理解，
+      也许并不符合开发者的需求，也许开发者有更深透的理解。现方案是，将尽量多的方法都提供出来，供开
+      发者自行抉择（找到最贴近需求的那一个并用之）。已提供的如下：
+
+        def rename(self, dst: PathLink, /) -> PathLink:
+            # Rename the file, call `os.rename` internally.
+
+        def renames(self, dst: PathLink, /) -> PathLink:
+            # Rename the file, super version of `self.rename`. Call `os.renames`
+            # internally.
+
+        def replace(self, dst: PathLink, /) -> PathLink:
+            # Rename the file, overwrite if destination exists. Call `os.replace`
+            # internally.
+
+        def move(self, dst: PathLink, /, ...) -> PathLink:
+            # Move the file, call `shutil.move` internally.
+
+- issue: "当目标路径是相对的且没有任何上级路径时，目标路径几乎 “追随” 原路径的上一级路径"
+  location: "gqylpy_filesystem.g filesystem.File.dst2abs"
+  create: 2022-10-30
+  labels: enhancement
+  status: Processed
+  description: |
+    对于同时需要原路径和目标路径的操作（例如 `move`, `copy`），若目标路径是相对的，我们将以原路
+    径的上一级路径作为目标路径的父路径，而非常规的以当前工作目录。我们经历过大量的实践，以及在分析
+    了大量的案例后得出的结论：
+
+      当目标路径是相对的且没有任何上级路径时，目标路径几乎 “追随” 原路径的上一级路径。
