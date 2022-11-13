@@ -66,13 +66,13 @@
             # Move the file, call `shutil.move` internally.
 
 - issue: "当目标路径是相对的且没有任何上级路径时，目标路径几乎 “追随” 原路径的上一级路径"
-  location: "gqylpy_filesystem.g filesystem.File.dst2abs"
+  location: "gqylpy_filesystem.g filesystem.dst2abs"
   create: 2022-10-30
-  labels: enhancement
+  labels: question
   status: Processed
   description: |
-    对于同时需要原路径和目标路径的操作（例如 `move`, `copy`），若目标路径是相对的，我们将以原路
-    径的上一级路径作为目标路径的父路径，而非常规的以当前工作目录。我们经历过大量的实践，以及在分析
-    了大量的案例后得出的结论：
+    对于重命名文件或目录的操作，若目标路径是相对的且没有任何上级路径，我们将以原路径的上一级路径作
+    为目标路径的父路径，而非常规的以当前工作目录。我们经历过大量的实践，以及在分析了大量的案例后得
+    出的结论：
 
       当目标路径是相对的且没有任何上级路径时，目标路径几乎 “追随” 原路径的上一级路径。

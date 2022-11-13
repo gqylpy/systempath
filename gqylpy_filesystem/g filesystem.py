@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import sys
-import shutil
+import hashlib
+import warnings
 import functools
 
 from os import (
@@ -22,9 +23,8 @@ from os import (
     rename, renames, replace, remove, chmod, truncate, access, link, symlink
 )
 
-
 if sys.platform != 'win32':
-    from os import mknod, chown, lchmod, system, popen
+    from os import mknod, chown, system, popen
 
     if sys.platform == 'linux':
         from os import getxattr, listxattr, removexattr, setxattr
@@ -36,49 +36,47 @@ if sys.platform != 'win32':
         chflags = lchflags = lchmod
 
 from os.path import (
-    basename, dirname , abspath   , relpath, join  ,
+    basename, dirname , abspath   , relpath,  join  ,
     split   , splitext, splitdrive,
     isabs   , isfile  , exists    , lexists , islink,
     getsize , getctime, getmtime  , getatime
 )
 
-from typing import TextIO, Union, Literal, Tuple, Callable, Optional
+from shutil import move, copyfile, copystat, copymode, copy2
+
+from typing import \
+    TextIO, BinaryIO, Literal, Optional, Union, Tuple, List, Callable
 
 import gqylpy_exception as ge
 
 PathLink = BytesOrStr = Union[bytes, str]
 
 
-def dst2abs(func: Callable[['File', PathLink, ...], None]) -> Callable:
-    # If the destination path is relative, the parent path of the source is used
-    # as the parent path of the destination instead of using the current working
-    # directory, different from the traditional way.
+def dst2abs(
+        func: Callable[['File', PathLink], None]
+) -> Callable[['File', PathLink], PathLink]:
+    # If the destination path is relative and is a single name, the parent path
+    # of the source is used as the parent path of the destination instead of
+    # using the current working directory, different from the traditional way.
     @functools.wraps(func)
-    def core(file: 'File', dst: PathLink, **kw) -> PathLink:
+    def core(file: 'File', dst: PathLink) -> PathLink:
         try:
-            absolute: bool = isabs(dst)
+            single_name: bool = basename(dst) == dst
         except TypeError:
             raise ge.DestinationPathTypeError(
                 'destination path type can only be "bytes" or "str".'
             )
-        if not absolute and dst == basename(dst):
+        if single_name:
             try:
-                dst: PathLink = join(dirname(file.path), dst)
+                dst: PathLink = join(file.dirname, dst)
             except TypeError:
-                filepath: PathLink = file.path.decode() \
-                    if dst.__class__ is str else file.path.encode()
-                dst: PathLink = join(dirname(filepath), dst)
-        func(file, dst, **kw)
-        return dst
-    return core
-
-
-def dst2abs_and2path(func: Callable[['File', PathLink, ...], None]) -> Callable:
-    @functools.wraps(func)
-    @dst2abs
-    def core(file: 'File', dst: PathLink, **kw) -> None:
-        func(file, dst, **kw)
+                dst: PathLink = join(dirname(
+                    file.path.decode() if dst.__class__ is str
+                    else file.path.encode()
+                ), dst)
+        func(file, dst)
         file._File__path = dst
+        return dst
     return core
 
 
@@ -103,17 +101,14 @@ class File:
         self.dir_fd          = dir_fd
         self.follow_symlinks = follow_symlinks
 
-    def __del__(self):
-        pass
-
-    def open(self, **kw) -> TextIO:
+    def open(self, **kw) -> Union[BinaryIO, TextIO]:
         raise NotImplementedError
 
     @property
     def path(self) -> PathLink:
         return self.__path
 
-    def neat_path(self) -> None:
+    def neatpath(self) -> None:
         if not self.autoabs:
             self.__path = abspath(self.path)
 
@@ -137,7 +132,6 @@ class File:
 
     realpath = abspath
 
-    @property
     def relpath(self, start: Optional[PathLink] = None):
         return relpath(self.path, start=start)
 
@@ -201,46 +195,46 @@ class File:
             follow_symlinks=self.follow_symlinks
         )
 
-    @dst2abs_and2path
+    @dst2abs
     def rename(self, dst: PathLink, /) -> None:
         rename(self.path, dst, src_dir_fd=self.dir_fd, dst_dir_fd=self.dir_fd)
 
-    @dst2abs_and2path
+    @dst2abs
     def renames(self, dst: PathLink, /) -> None:
         renames(self.path, dst)
 
-    @dst2abs_and2path
+    @dst2abs
     def replace(self, dst: PathLink, /) -> None:
         replace(self.path, dst, src_dir_fd=self.dir_fd, dst_dir_fd=self.dir_fd)
 
-    @dst2abs_and2path
     def move(
             self,
             dst:           PathLink,
             /, *,
-            copy_function: Callable[[PathLink, PathLink], None] = shutil.copy2
-    ) -> None:
-        shutil.move(self.path, dst, copy_function=copy_function)
+            copy_function: Callable[[PathLink, PathLink], None] = copy2
+    ) -> PathLink:
+        return move(self.path, dst, copy_function=copy_function)
 
-    @dst2abs
-    def copy(self, dst: PathLink, /) -> None:
-        shutil.copyfile(self.path, dst, follow_symlinks=self.follow_symlinks)
+    def copy(self, dst: PathLink, /) -> PathLink:
+        return copyfile(
+            src            =self.path,
+            dst            =dst,
+            follow_symlinks=self.follow_symlinks
+        )
 
-    @dst2abs
     def copystat(self, dst: PathLink, /) -> None:
-        shutil.copystat(self.path, dst, follow_symlinks=self.follow_symlinks)
+        copystat(self.path, dst, follow_symlinks=self.follow_symlinks)
 
-    @dst2abs
     def copymode(self, dst: PathLink, /) -> None:
-        shutil.copymode(self.path, dst, follow_symlinks=self.follow_symlinks)
+        copymode(self.path, dst, follow_symlinks=self.follow_symlinks)
 
     def copycontent(
             self,
-            fdst:   TextIO,
+            fdst:   BinaryIO,
             /, *,
             buffer: int = 1024 * 1024 if sys.platform == 'win32' else 64 * 1024
     ) -> None:
-        fsrc: TextIO = open(self.path)
+        fsrc: BinaryIO = open(self.path, 'rb')
         try:
             reader, writer = fsrc.read, fdst.write
             while True:
@@ -251,7 +245,6 @@ class File:
         finally:
             fsrc.close()
 
-    @dst2abs
     def link(self, dst: PathLink, /) -> None:
         link(
             src            =self.path,
@@ -261,7 +254,6 @@ class File:
             follow_symlinks=self.follow_symlinks
         )
 
-    @dst2abs
     def symlink(self, dst: PathLink, /) -> None:
         symlink(self.path, dst, dir_fd=self.dir_fd)
 
@@ -270,33 +262,6 @@ class File:
 
     def clear(self) -> None:
         truncate(self.path, 0)
-
-    if sys.platform != 'win32':
-        def mknod(
-                self,
-                mode:          int  = 0o600,
-                *a,
-                ignore_exists: bool = False,
-                **kw
-        ) -> None:
-            if not exists(self.path):
-                open(self.path, 'x').close()
-                chmod(self.path, mode)
-            elif not ignore_exists:
-                raise FileExistsError(f'file "{self.path}" already exists.')
-    else:
-        def mknod(
-                self,
-                mode:          int  = None,
-                *,
-                device:        int  = 0,
-                ignore_exists: bool = False
-        ) -> None:
-            try:
-                mknod(self.path, mode, device, dir_fd=self.dir_fd)
-            except FileExistsError:
-                if not ignore_exists:
-                    raise
 
     def remove(self) -> None:
         remove(self.path)
@@ -343,6 +308,19 @@ class File:
         )
 
     if sys.platform != 'win32':
+        def mknod(
+                self,
+                mode:          int  = None,
+                *,
+                device:        int  = 0,
+                ignore_exists: bool = False
+        ) -> None:
+            try:
+                mknod(self.path, mode, device, dir_fd=self.dir_fd)
+            except FileExistsError:
+                if not ignore_exists:
+                    raise
+
         def lchmod(self, mode: int, /) -> None:
             lchmod(self.path, mode)
 
@@ -365,15 +343,23 @@ class File:
             lchflags(self.path, flags)
 
         def chattr(self, operator: Literal['+', '-', '='], attrs: str) -> None:
+            warnings.warn(UseWarning(
+                'implementation of method `chattr` is to directly call the '
+                'system command `chattr`, so this is very unreliable.'
+            ))
             if operator not in ('+', '-', '='):
                 raise ge.ChattrOperatorError(
-                    f'Unsupported operation "{operator}", only "+", "-" or "=".'
+                    f'unsupported operation "{operator}", only "+", "-" or "=".'
                 )
             c: str = f'chattr {operator}{attrs} {self.path}'
             if system(f'sudo {c} &>/dev/null'):
                 raise ge.ChattrExecuteError(c)
 
         def lsattr(self) -> str:
+            warnings.warn(UseWarning(
+                'implementation of method `lsattr` is to directly call the '
+                'system command `lsattr`, so this is very unreliable.'
+            ))
             c: str = f'lsattr {self.path}'
             attrs: str = popen(
                 "sudo %s 2>/dev/null | awk '{print $1}'" % c
@@ -385,10 +371,65 @@ class File:
         def exattr(self, attr: str, /) -> bool:
             return attr in self.lsattr()
 
-    def md5(self):
-        raise NotImplementedError
+        if sys.platform == 'linux':
+            def getxattr(self, attribute: BytesOrStr, /) -> bytes:
+                return getxattr(
+                    path           =self.path,
+                    attribute      =attribute,
+                    follow_symlinks=self.follow_symlinks
+                )
 
-    def abspath_if_not(self, path: PathLink, /) -> PathLink:
-        if not isabs(path):
-            path: PathLink = join(dirname(self.path), path)
-        return path
+            def listxattr(self) -> List[str]:
+                return listxattr(
+                    path           =self.path,
+                    follow_symlinks=self.follow_symlinks
+                )
+
+            def removexattr(self, attribute: BytesOrStr, /) -> None:
+                removexattr(
+                    path           =self.path,
+                    attribute      =attribute,
+                    follow_symlinks=self.follow_symlinks
+                )
+
+            def setxattr(
+                    self,
+                    attribute: BytesOrStr,
+                    value:     bytes,
+                    *,
+                    flags:     int        = 0
+            ) -> None:
+                setxattr(
+                    path     =self.path,
+                    attribute=attribute,
+                    value    =value,
+                    flags    =flags
+                )
+    else:
+        def mknod(
+                self,
+                mode:          int  = 0o600,
+                *a,
+                ignore_exists: bool = False,
+                **kw
+        ) -> None:
+            if not exists(self.path):
+                open(self.path, 'x').close()
+                chmod(self.path, mode)
+            elif not ignore_exists:
+                raise FileExistsError(f'file "{self.path}" already exists.')
+
+    @property
+    def md5(self, salting: bytes = b'', /) -> str:
+        md5 = hashlib.md5(salting)
+        with open(self.path, 'rb') as f:
+            while True:
+                content = f.read(self.copycontent.__kwdefaults__['buffer'])
+                if not content:
+                    break
+                md5.update(content)
+        return md5.hexdigest()
+
+
+class UseWarning(Warning):
+    ...

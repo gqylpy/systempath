@@ -1,4 +1,12 @@
 """
+Make Python operation files and system paths become Simple, Simpler, Simplest,
+Humanized, Unified, Flawless.
+
+    @version: 1.0.alpha5
+    @author: 竹永康 <gqylpy@outlook.com>
+    @source: https://github.com/gqylpy/gqylpy-filesystem
+
+────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022 GQYLPY <http://gqylpy.com>. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +21,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-# @version: 1.0.alpha4
-# @author: 竹永康 <gqylpy@outlook.com>
-# @source: https://github.com/gqylpy/gqylpy-filesystem
 import os
 import sys
 
-from typing import TextIO, Union, Literal, Tuple, Callable, Optional
+from typing import BinaryIO, Literal, Optional, Union, Tuple, List, Callable
 
 BytesOrStr = Union[bytes, str]
 PathLink   = BytesOrStr
@@ -32,13 +37,13 @@ class File:
             path:  PathLink,
             /, *,
             ftype: Literal['txt', 'json', 'yaml', 'csv', 'obj'] = None,
-            autoabs: bool = False,
-            dir_fd: Optional[int] = None,
-            follow_symlinks: bool = None
+            autoabs: bool = None,
+            follow_symlinks: bool = None,
+            dir_fd: Optional[int] = None
     ):
         """
         @param path
-            A file path, hopefully absolute, if it is a relative path, the
+            A file path, hopefully absolute. If it is a relative path, the
             current working directory is used as the parent directory (the
             return value of `os.getcwd()`).
 
@@ -48,21 +53,12 @@ class File:
         @param autoabs
             ...
 
-        @param dir_fd
-            This optional parameter applies only to the following methods:
-                ...
-
-            A file descriptor open to a directory, obtain by `os.open`, sample
-            `os.open('dir/', os.O_RDONLY)`. If this parameter is specified and
-            the parameter `path` is relative, the parameter `path` will then be
-            relative to that directory; otherwise, this parameter is ignored.
-
-            This parameter may not be available on your platform, using them
-            will ignored or raise `NotImplementedError` if unavailable.
-
         @param follow_symlinks
             This optional parameter applies only to the following methods:
-                ...
+                `readable`, `writeable`, `executable`, `copy`,
+                `copystat`, `copymode`,  `link`,       `stat`,
+                `chmod`,    `access`,    `lchmod`,     `chown`,
+                `chflags`,  `getxattr`,  `listxattr`,  `removexattr`
 
             Used to indicate whether symbolic links are followed, default True.
             If specified as False, and the last element of the parameter `path`
@@ -71,6 +67,21 @@ class File:
 
             This parameter may not be available on your platform, using them
             will raise `NotImplementedError` if unavailable.
+
+        @param dir_fd
+            This optional parameter applies only to the following methods:
+                `readable`, `writeable`, `executable`, `rename`,
+                `replace`,  `link`,      `symlink`,    `mknod` (not on Windows),
+                `stat`,     `lstat`,     `chmod`,      `access`,
+                `lchmod`,   `chown`
+
+            A file descriptor open to a directory, obtain by `os.open`, sample
+            `os.open('dir/', os.O_RDONLY)`. If this parameter is specified and
+            the parameter `path` is relative, the parameter `path` will then be
+            relative to that directory; otherwise, this parameter is ignored.
+
+            This parameter may not be available on your platform, using them
+            will ignored or raise `NotImplementedError` if unavailable.
         """
         self.path            = path
         self.ftype           = ftype
@@ -78,10 +89,7 @@ class File:
         self.dir_fd          = dir_fd
         self.follow_symlinks = follow_symlinks
 
-    def open(self, **kw) -> TextIO:
-        raise NotImplementedError
-
-    def neat_path(self) -> None:
+    def neatpath(self) -> None:
         if not self.autoabs:
             self.path = self.abspath
 
@@ -103,7 +111,6 @@ class File:
 
     realpath = abspath
 
-    @property
     def relpath(self, start: Optional[PathLink] = None):
         return os.path.relpath(self.path, start=start)
 
@@ -162,11 +169,13 @@ class File:
         parameters `src_dir_fd` and `dst_dir_fd` of `os.rename`.
 
         Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
+        If the destination path is relative and is a single name, the parent
+        path of the source is used as the parent path of the destination instead
+        of using the current working directory, different from the traditional
+        way. https://github.com/gqylpy/gqylpy-filesystem/issues/2
 
-        For more details https://github.com/gqylpy/gqylpy-filesystem/issues/1
+        Backstory about providing this method
+            https://github.com/gqylpy/gqylpy-filesystem/issues/1
 
         @return: The destination absolute path.
         """
@@ -183,11 +192,13 @@ class File:
         directory is found.
 
         Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
+        If the destination path is relative and is a single name, the parent
+        path of the source is used as the parent path of the destination instead
+        of using the current working directory, different from the traditional
+        way. https://github.com/gqylpy/gqylpy-filesystem/issues/2
 
-        For more details https://github.com/gqylpy/gqylpy-filesystem/issues/1
+        Backstory about providing this method
+            https://github.com/gqylpy/gqylpy-filesystem/issues/1
 
         @return: The destination absolute path.
         """
@@ -201,11 +212,13 @@ class File:
         parameters `src_dir_fd` and `dst_dir_fd` of `os.replace`.
 
         Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
+        If the destination path is relative and is a single name, the parent
+        path of the source is used as the parent path of the destination instead
+        of using the current working directory, different from the traditional
+        way. https://github.com/gqylpy/gqylpy-filesystem/issues/2
 
-        For more details https://github.com/gqylpy/gqylpy-filesystem/issues/1
+        Backstory about providing this method
+            https://github.com/gqylpy/gqylpy-filesystem/issues/1
 
         @return: The destination absolute path.
         """
@@ -223,14 +236,10 @@ class File:
         The optional parameter `copy_function` will be passed to `shutil.move`
         and default value is `shutil.copy2`.
 
-        Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
+        Backstory about providing this method
+            https://github.com/gqylpy/gqylpy-filesystem/issues/1
 
-        For more details https://github.com/gqylpy/gqylpy-filesystem/issues/1
-
-        @return: The destination absolute path.
+        @return: The destination path.
         """
 
     def copy(self, dst: PathLink, /) -> PathLink:
@@ -242,15 +251,10 @@ class File:
         link, will create a new symbolic link instead of copy the file to which
         the link points to.
 
-        Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
-
-        @return: The destination absolute path.
+        @return: The destination path.
         """
 
-    def copystat(self, dst: PathLink, /) -> PathLink:
+    def copystat(self, dst: PathLink, /) -> None:
         """
         Copy the file metadata to another file, call `shutil.copystat`
         internally.
@@ -264,16 +268,9 @@ class File:
         not to the file to which the link points, if and only if both the
         initialization parameter `self.path` and the parameter `dst` are
         symbolic links.
-
-        Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
-
-        @return: The destination absolute path.
         """
 
-    def copymode(self, dst: PathLink, /) -> PathLink:
+    def copymode(self, dst: PathLink, /) -> None:
         """
         Copy the file mode bits to another file, call `shutil.copymode`
         internally.
@@ -284,16 +281,9 @@ class File:
         initialization parameter `self.path` and the parameter `dst` are
         symbolic links. But if `self.lchmod` isn't available (e.g. Linux) this
         method does nothing.
-
-        Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
-
-        @return: The destination absolute path.
         """
 
-    def copycontent(self, fdst: TextIO, /, *, buffer: int = None) -> None:
+    def copycontent(self, fdst: BinaryIO, /, *, buffer: int = None) -> None:
         """
         Copy the file contents to another file.
 
@@ -307,7 +297,7 @@ class File:
             but if your platform is Windows then `1024 * 1024`).
         """
 
-    def link(self, dst: PathLink, /) -> PathLink:
+    def link(self, dst: PathLink, /) -> None:
         """
         Create a hard link to the file, call `os.link` internally.
 
@@ -318,26 +308,10 @@ class File:
         specified as False, and the last element of the file path is a symbolic
         link, will create a link to the symbolic link itself instead of the file
         to which the link points to.
-
-        Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
-
-        @return: The destination absolute path.
         """
 
-    def symlink(self, dst: PathLink, /) -> PathLink:
-        """
-        Create a symbolic link to the file, call `os.symlink` internally.
-
-        Important Notice:
-        If the destination path is relative, the parent path of the source is
-        used as the parent path of the destination instead of using the current
-        working directory, different from the traditional way.
-
-        @return: The destination absolute path.
-        """
+    def symlink(self, dst: PathLink, /) -> None:
+        """Create a symbolic link to the file, call `os.symlink` internally."""
 
     def truncate(self, length: int) -> None:
         os.truncate(self.path, length)
@@ -363,7 +337,7 @@ class File:
 
         @param device
             Default 0, this parameter may not be available on your platform,
-            using them will ignored if unavailable. You can look up `os.access`
+            using them will ignored if unavailable. You can look up `os.mknod`
             for more description.
 
         @param ignore_exists
@@ -407,8 +381,8 @@ class File:
     def lstat(self) -> os.stat_result:
         """Get the file status, like `self.stat`, but do not follow symbolic
         links."""
-        return self.__class__(
-            self.path, dir_fd=self.dir_fd, follow_symlinks=False
+        return File(
+            self.path, follow_symlinks=False, dir_fd=self.dir_fd
         ).stat
 
     def getsize(self) -> int:
@@ -438,7 +412,7 @@ class File:
         which the link points.
         """
 
-    def access(self, mode: int, /, *, effective_ids: bool = False) -> bool:
+    def access(self, mode: int, /, *, effective_ids: bool = None) -> bool:
         """
         Test the file access permissions with the real uid/gid, call `os.access`
         internally.
@@ -465,7 +439,7 @@ class File:
         def lchmod(self, mode: int, /) -> None:
             """Change the access permissions of the file, like `self.chmod`, but
             do not follow symbolic links."""
-            self.__class__(self.path, follow_symlinks=False).chmod(mode)
+            File(self.path, follow_symlinks=False).chmod(mode)
 
         def chown(self, uid: int, gid: int) -> None:
             """
@@ -486,7 +460,7 @@ class File:
         def lchown(self, uid: int, gid: int) -> None:
             """Change the file owner and owner group, like `self.chown`, but do
             not follow symbolic links."""
-            self.__class__(self.path, follow_symlinks=False).chown(uid, gid)
+            File(self.path, follow_symlinks=False).chown(uid, gid)
 
         def chflags(self, flags: int) -> None:
             """"
@@ -581,20 +555,53 @@ class File:
                 More attributes that are rarely used (or no longer used), you
                 can refer to the manual of the Unix system command `chattr`.
 
-            Warning, do not attempt to modify hidden attributes of important
-            files in your system, this may cause your system failure, unable to
-            start!
+            Use Warning, the implementation of method `chattr` is to directly
+            call the system command `chattr`, so this is very unreliable. Also,
+            do not attempt to modify hidden attributes of important files in
+            your system, this may cause your system failure, unable to start!
             """
 
         def lsattr(self) -> str:
-            """Return the hidden attributes of the file, call the Unix system
-            command `lsattr` internally."""
+            """
+            Return the hidden attributes of the file, call the Unix system
+            command `lsattr` internally.
+
+            Use Warning, the implementation of method `lsattr` is to directly
+            call the system command `lsattr`, so this is very unreliable.
+            """
 
         def exattr(self, attr: str, /) -> bool:
             """Check whether the file has a hidden attribute and return True or
             False. The usage of parameter `attr` can be seen in method `chattr`.
             """
             return attr in self.lsattr()
+
+        if sys.platform == 'linux':
+            def getxattr(self, attribute: BytesOrStr, /) -> bytes:
+                """Return the value of extended attribute attribute on path, you
+                can look up `os.getxattr` for more description."""
+
+            def listxattr(self) -> List[str]:
+                """Return a list of extended attributes on path, you can look up
+                `os.listxattr` for more description."""
+
+            def removexattr(self, attribute: BytesOrStr, /) -> None:
+                """Remove extended attribute attribute on path, you can look up
+                `os.removexattr` for more description."""
+
+            def setxattr(
+                    self,
+                    attribute: BytesOrStr,
+                    value:     bytes,
+                    *,
+                    flags:     int        = None
+            ) -> None:
+                """Set extended attribute attribute on path to value, you can
+                look up `os.setxattr` for more description."""
+
+    @property
+    def md5(self, salting: bytes = None, /) -> str:
+        """Get the hex digest value of the file content."""
 
 
 class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
