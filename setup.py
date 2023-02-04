@@ -4,7 +4,7 @@ import gqylpy_filesystem as g
 
 from gqylpy_filesystem import File
 
-with File(g.__file__).open.r(encoding='UTF-8') as f:
+with File(g.__file__).open.r() as f:
     for line in f:
         if line.startswith('@version: ', 4):
             version = line.split()[-1]
@@ -12,7 +12,7 @@ with File(g.__file__).open.r(encoding='UTF-8') as f:
     author, email = f.readline().split(maxsplit=1)[-1].rstrip().split()
     source = f.readline().split()[-1]
 
-with File('requirements.txt').open.r(encoding='UTF-8') as f:
+with File('requirements.txt').open.r() as f:
     requires = [str(x) for x in pkg_resources.parse_requirements(f)]
 
 setuptools.setup(
@@ -24,7 +24,7 @@ setuptools.setup(
     url='http://gqylpy.com',
     project_urls={'Source': source},
     description='简单化，简洁化，简便化，人性化，统一化，完美化操作文件和系统路径。',
-    long_description=open('README.md', encoding='utf8').read(),
+    long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     packages=[g.__name__],
     python_requires='>=3.8, <4',
