@@ -1,8 +1,8 @@
 import setuptools
 import pkg_resources
-import gqylpy_filesystem as g
+import systempath as g
 
-from gqylpy_filesystem import File
+from systempath import File
 
 with File(g.__file__).open.r() as f:
     for line in f:
@@ -23,12 +23,12 @@ setuptools.setup(
     license='Apache 2.0',
     url='http://gqylpy.com',
     project_urls={'Source': source},
-    description='简单化，简洁化，简便化，人性化，统一化，完美化操作文件和系统路径。',
+    description='Operating system paths and files.',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     packages=[g.__name__],
     python_requires='>=3.8, <4',
-    install_requires=['gqylpy==1.0'] + requires,
+    install_requires=requires,
     classifiers=[
         'Environment :: Web Environment',
         'Intended Audience :: Developers',

@@ -1,10 +1,26 @@
-"""
-Make Python operation files and system paths become Simple, Simpler, Simplest,
-Humanized, Unified, Flawless.
+"""Operating system paths and files.
 
-    @version: 1.0.alpha7
+Let Python operating system paths and files become Simple, Simpler, Simplest,
+Humanization, Unification, Flawless.
+
+    >>> from systempath import SystemPath, Directory, File
+
+    >>> root = SystemPath('/')
+
+    >>> home: Directory = root['home']['gqylpy']
+    >>> home
+    /home/gqylpy
+
+    >>> file: File = home['alpha.txt']
+    >>> file
+    /home/gqylpy/alpha.txt
+
+    >>> file.open.rb().read()
+    b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
+
+    @version: 1.0.alpha8
     @author: 竹永康 <gqylpy@outlook.com>
-    @source: https://github.com/gqylpy/gqylpy-filesystem
+    @source: https://github.com/gqylpy/systempath
 
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022, 2023 GQYLPY <http://gqylpy.com>. All rights reserved.
@@ -27,37 +43,42 @@ import warnings
 
 from typing import (
     TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO, Callable,
-    Generator, Iterator
+    Generator, Iterator, Any
 )
 
 BytesOrStr = TypeVar('BytesOrStr', bytes, str)
 PathLink   = BytesOrStr
 
-EncodingErrorHandlingMode = Literal[
-    'strict',
-    'ignore',
-    'replace',
-    'surrogateescape',
-    'xmlcharrefreplace',
-    'backslashreplace',
-    'namereplace'
-]
+__all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
 
 
 class Path:
 
     def __init__(
             self,
-            path:            PathLink,
+            name:            PathLink,
             /, *,
+            autoabs:         Optional[bool] = None,
+            strict:          Optional[bool] = None,
             dir_fd:          Optional[int]  = None,
             follow_symlinks: Optional[bool] = None
     ):
         """
-        @param path
+        @param name
             A path link, hopefully absolute. If it is a relative path, the
             current working directory is used as the parent directory (the
-            return value of `os.getcwd()`).
+            return value of `os.getcwd()`). The current working directory is
+            used by default.
+
+        @param autoabs
+            Automatically normalize the path link and convert to absolute path,
+            at initialization. Default False. It is always recommended that you
+            enable the parameter when the passed path is a relative path.
+
+        @param strict
+            Set to True to enable strict mode, which means that the passed path
+            must exist, otherwise raise `SystemPathNotFoundError` (or other).
+            Default False.
 
         @param dir_fd
             This optional parameter applies only to the following methods:
@@ -93,66 +114,127 @@ class Path:
             This parameter may not be available on your platform, using them
             will raise `NotImplementedError` if unavailable.
         """
-        self.path            = path
+        if strict and not os.path.exists(name):
+            raise SystemPathNotFoundError
+
+        self.name            = os.path.abspath(name) if autoabs else name
+        self.strict          = strict
         self.dir_fd          = dir_fd
         self.follow_symlinks = follow_symlinks
 
     @property
     def basename(self) -> BytesOrStr:
-        return os.path.basename(self.path)
+        return os.path.basename(self.name)
 
     @property
-    def dirname(self) -> PathLink:
-        return os.path.dirname(self.path)
+    def dirname(self) -> 'Directory':
+        return Directory(
+            os.path.dirname(self.name),
+            strict         =self.strict,
+            dir_fd         =self.dir_fd,
+            follow_symlinks=self.follow_symlinks
+        )
 
-    def dirnamel(self, level: int) -> PathLink:
+    def dirnamel(self, level: int) -> 'Directory':
         """Like `self.dirname`, and can specify the directory level."""
-        return self.path.rsplit(os.sep, maxsplit=level)[0]
+        return Directory(
+            self.name.rsplit(os.sep, maxsplit=level)[0],
+            strict         =self.strict,
+            dir_fd         =self.dir_fd,
+            follow_symlinks=self.follow_symlinks
+        )
 
     @property
-    def abspath(self) -> PathLink:
-        return os.path.abspath(self.path)
+    def abspath(self) -> 'Path':
+        return self.__class__(
+            os.path.abspath(self.name),
+            strict         =self.strict,
+            follow_symlinks=self.follow_symlinks
+        )
 
-    realpath = abspath
+    def realpath(self, *, strict: Optional[bool] = None) -> 'Path':
+        return self.__class__(
+            os.path.realpath(self.name, strict=strict),
+            strict         =self.strict,
+            follow_symlinks=self.follow_symlinks
+        )
 
-    def relpath(self, start: Optional[PathLink] = None) -> PathLink:
-        return os.path.relpath(self.path, start=start)
+    def relpath(self, start: Optional[PathLink] = None) -> 'Path':
+        return self.__class__(
+            os.path.relpath(self.name, start=start),
+            strict         =self.strict,
+            follow_symlinks=self.follow_symlinks
+        )
+
+    def normpath(self) -> 'Path':
+        return self.__class__(
+            os.path.normpath(self.name),
+            strict         =self.strict,
+            dir_fd         =self.dir_fd,
+            follow_symlinks=self.follow_symlinks
+        )
+
+    def expanduser(self) -> 'Path':
+        return self.__class__(
+            os.path.expanduser(self.name),
+            strict         =self.strict,
+            follow_symlinks=self.follow_symlinks
+        )
+
+    def expandvars(self) -> 'Path':
+        return self.__class__(
+            os.path.expandvars(self.name),
+            strict         =self.strict,
+            follow_symlinks=self.follow_symlinks
+        )
 
     def split(self) -> Tuple[PathLink, BytesOrStr]:
-        return os.path.split(self.path)
+        return os.path.split(self.name)
 
     def splitdrive(self) -> Tuple[BytesOrStr, PathLink]:
-        return os.path.splitdrive(self.path)
+        return os.path.splitdrive(self.name)
 
     @property
     def isabs(self) -> bool:
-        return os.path.isabs(self.path)
+        return os.path.isabs(self.name)
 
     @property
     def exists(self) -> bool:
-        return os.path.exists(self.path)
+        return os.path.exists(self.name)
 
     @property
     def lexists(self) -> bool:
         """Like `self.exists`, but do not follow symbolic links, return True for
         broken symbolic links."""
-        return os.path.lexists(self.path)
+        return os.path.lexists(self.name)
 
     @property
     def isdir(self) -> bool:
-        return os.path.isdir(self.path)
+        return os.path.isdir(self.name)
 
     @property
     def isfile(self) -> bool:
-        return os.path.isfile(self.path)
+        return os.path.isfile(self.name)
 
     @property
     def islink(self) -> bool:
-        return os.path.islink(self.path)
+        return os.path.islink(self.name)
 
     @property
     def ismount(self) -> bool:
-        return os.path.ismount(self.path)
+        return os.path.ismount(self.name)
+
+    @property
+    def is_block_device(self) -> bool:
+        """Return True if the path is a block device else False."""
+
+    @property
+    def is_char_device(self) -> bool:
+        """Return True if the path is a character device else False."""
+
+    @property
+    def isfifo(self) -> bool:
+        """Return True if the path is a FIFO else False."""
 
     @property
     def readable(self) -> bool:
@@ -165,6 +247,25 @@ class Path:
     @property
     def executable(self) -> bool:
         return self.access(os.X_OK)
+
+    def delete(
+            self,
+            *,
+            ignore_errors: Optional[bool]     = None,
+            onerror:       Optional[Callable] = None
+    ) -> None:
+        """
+        Delete the path, if the path is a file then call `os.remove` internally,
+        if the path is a directory call `shutil.rmtree` internally.
+
+        @param ignore_errors
+            If the path does not exist will raise `FileNotFoundError`, can set
+            this parameter to True to silence the exception. Default False.
+
+        @param onerror
+            An optional error handler, used only if the path is a directory, for
+            more instructions see `shutil.rmtree`.
+        """
 
     def rename(self, dst: PathLink, /) -> PathLink:
         """
@@ -180,7 +281,7 @@ class Path:
         way.
 
         Backstory about providing this method
-            https://github.com/gqylpy/gqylpy-filesystem/issues/1
+            https://github.com/gqylpy/systempath/issues/1
 
         @return: The destination path.
         """
@@ -202,7 +303,7 @@ class Path:
         way.
 
         Backstory about providing this method
-            https://github.com/gqylpy/gqylpy-filesystem/issues/1
+            https://github.com/gqylpy/systempath/issues/1
 
         @return: The destination path.
         """
@@ -222,7 +323,7 @@ class Path:
         way.
 
         Backstory about providing this method
-            https://github.com/gqylpy/gqylpy-filesystem/issues/1
+            https://github.com/gqylpy/systempath/issues/1
 
         @return: The destination path.
         """
@@ -246,7 +347,7 @@ class Path:
             `shutil.move` and default value is `shutil.copy2`.
 
         Backstory about providing this method
-            https://github.com/gqylpy/gqylpy-filesystem/issues/1
+            https://github.com/gqylpy/systempath/issues/1
 
         @return: The parameter `dst` is passed in, without any modification.
         """
@@ -269,7 +370,7 @@ class Path:
         If the optional initialization parameter `self.follow_symlinks` is
         specified as False, the action will point to the symbolic link itself,
         not to the path to which the link points, if and only if both the
-        initialization parameter `self.path` and the parameter `dst` are
+        initialization parameter `self.name` and the parameter `dst` are
         symbolic links.
 
         @return: The parameter `dst` is passed in, without any modification.
@@ -289,7 +390,7 @@ class Path:
         If the optional initialization parameter `self.follow_symlinks` is
         specified as False, the action will point to the symbolic link itself,
         not to the path to which the link points, if and only if both the
-        initialization parameter `self.path` and the parameter `dst` are
+        initialization parameter `self.name` and the parameter `dst` are
         symbolic links. But if `self.lchmod` isn't available (e.g. Linux) this
         method does nothing.
 
@@ -314,7 +415,7 @@ class Path:
         """
         Return the path to which the symbolic link points.
 
-        If the initialization parameter `self.path` is not a symbolic link, call
+        If the initialization parameter `self.name` is not a symbolic link, call
         this method will raise `OSError`.
         """
 
@@ -351,22 +452,21 @@ class Path:
         """Get the status of the file or directory, like `self.stat`, but do not
         follow symbolic links."""
         return self.__class__(
-            self.path, dir_fd=self.dir_fd, follow_symlinks=False
+            self.name, dir_fd=self.dir_fd, follow_symlinks=False
         ).stat
 
     def getsize(self) -> int:
-        """Get the size of the file or directory, if the path is a directory
-        then return 0."""
-        return os.path.getsize(self.path)
+        """Get the size of the file, Return 0 if the path is a directory."""
+        return os.path.getsize(self.name)
 
     def getctime(self) -> float:
-        return os.path.getctime(self.path)
+        return os.path.getctime(self.name)
 
     def getmtime(self) -> float:
-        return os.path.getmtime(self.path)
+        return os.path.getmtime(self.name)
 
     def getatime(self) -> float:
-        return os.path.getatime(self.path)
+        return os.path.getatime(self.name)
 
     def chmod(self, mode: int, /) -> None:
         """
@@ -412,7 +512,15 @@ class Path:
         def lchmod(self, mode: int, /) -> None:
             """Change the access permissions of the file or directory, like
             `self.chmod`, but do not follow symbolic links."""
-            self.__class__(self.path, follow_symlinks=False).chmod(mode)
+            self.__class__(self.name, follow_symlinks=False).chmod(mode)
+
+        @property
+        def owner(self) -> str:
+            """Get the login name of the path owner."""
+
+        @property
+        def group(self) -> str:
+            """Get the group name of the path owner group."""
 
         def chown(self, uid: int, gid: int) -> None:
             """
@@ -434,7 +542,7 @@ class Path:
         def lchown(self, uid: int, gid: int) -> None:
             """Change the owner and owner group of the file or directory, like
             `self.chown`, but do not follow symbolic links."""
-            self.__class__(self.path, follow_symlinks=False).chown(uid, gid)
+            self.__class__(self.name, follow_symlinks=False).chown(uid, gid)
 
         def chflags(self, flags: int) -> None:
             """"
@@ -496,7 +604,7 @@ class Path:
         def lchflags(self, flags: int) -> None:
             """Set the flag for the file or directory, like `self.chflags`, but
             do not follow symbolic links."""
-            self.__class__(self.path, follow_symlinks=False).chflags(flags)
+            self.__class__(self.name, follow_symlinks=False).chflags(flags)
 
         def chattr(self, operator: Literal['+', '-', '='], attrs: str) -> None:
             """
@@ -623,50 +731,77 @@ class Path:
 
 
 class Directory(Path):
+    """Pass a directory path link to get a directory object, which you can then
+    use to do anything a directory can do."""
+
+    def __getattr__(self, name: BytesOrStr) -> Any:
+        try:
+            return self[name]
+        except SystemPathNotFoundError:
+            raise AttributeError
+
+    def __getitem__(
+            self, name: BytesOrStr
+    ) -> Union['SystemPath', 'Directory', 'File']:
+        path: PathLink = os.path.join(self.name, name)
+
+        if self.strict:
+            if os.path.isdir(path):
+                return Directory(path, strict=self.strict)
+            if os.path.isfile(path):
+                return File(path)
+            if not os.path.exists(path):
+                raise SystemPathNotFoundError
+        else:
+            return SystemPath(path)
+
+    def __delitem__(self, name: BytesOrStr) -> None:
+        Path(os.path.join(self.name, name)).delete()
 
     def __iter__(self) -> Generator:
-        return self.iterdir()
+        return self.subpath
 
-    def listdir(self) -> List[BytesOrStr]:
-        """Get the names of all files and subdirectories (single-layer) in the
-        directory. Call `os.listdir` internally."""
+    @staticmethod
+    def home(
+            *,
+            strict:          Optional[bool] = None,
+            follow_symlinks: Optional[bool] = None
+    ) -> 'Directory':
+        return Directory(
+            '~', strict=strict, follow_symlinks=follow_symlinks
+        ).expanduser()
 
-    def iterdir(self) -> Generator:
-        """Get the instances of `File` or `Directory` for all files and
-        subdirectories (single-layer) in the directory."""
+    @property
+    def subpaths(self) -> Generator:
+        """Get the instances of `Directory` or `File` for all subpaths (single
+        layer) in the directory."""
+
+    @property
+    def subpaths_names(self) -> List[BytesOrStr]:
+        """Get the names of all subpaths (single layer) in the directory. Call
+        `os.listdir` internally."""
 
     def scandir(self) -> Iterator[os.DirEntry]:
         """Get instances of `os.DirEntry` for all files and subdirectories
-        (single-layer) in the directory, call `os.scandir` internally."""
+        (single layer) in the directory, call `os.scandir` internally."""
 
     def tree(
             self,
             *,
             level:     Optional[int]  = None,
-            fullpath:  Optional[bool] = None,
             bottom_up: Optional[bool] = None,
             omit_dir:  Optional[bool] = None,
-            packpath:  Optional[bool] = None
+            idiocy:    Optional[bool] = None,
+            shortpath: Optional[bool] = None
     ) -> Generator:
-        treepath: Generator = tree(
-            self.path,
+        return tree(
+            self.name,
             level    =level,
-            fullpath =fullpath,
             bottom_up=bottom_up,
-            omit_dir =omit_dir
+            omit_dir =omit_dir,
+            idiocy   =idiocy,
+            shortpath=shortpath
         )
-        if packpath:
-            for path in treepath:
-                if not fullpath:
-                    path: PathLink = os.path.join(self.path, path)
-                if os.path.isdir(path):
-                    yield Directory(path)
-                elif os.path.isfile(path):
-                    yield File(path)
-                else:
-                    yield Path(path)
-        else:
-            yield from treepath
 
     def walk(
             self,
@@ -688,41 +823,6 @@ class Directory(Path):
 
         @param onerror
             An optional error handler, for more instructions see `os.walk`.
-        """
-
-    def mkdir(self, mode: Optional[int] = None) -> None:
-        """
-        Create the directory on your system, call `os.mkdir` internally.
-
-        @param mode
-            Specify the access permissions for the directory, can be a
-            permission mask (0o600), can be a combination (0o600|stat.S_IFREG),
-            can be a bitwise (33152). Default is 0o777.
-
-            This parameter is ignored if your platform is Windows.
-        """
-
-    def makedirs(
-            self,
-            mode:     Optional[int]  = None,
-            *,
-            exist_ok: Optional[bool] = None
-    ) -> None:
-        """
-        Create the directory and all intermediate ones, super version of
-        `self.mkdir`. Call `os.makedirs` internally.
-
-        @param mode
-            Specify the access permissions for the directory, can be a
-            permission mask (0o600), can be a combination (0o600|stat.S_IFREG),
-            can be a bitwise (33152). Default is 0o777.
-
-            This parameter is ignored if your platform is Windows.
-
-        @param exist_ok
-            If the directory already exists will raise `FileExistsError`, can
-            set this parameter to True to silence the exception. Default is
-            False.
         """
 
     def copytree(
@@ -802,6 +902,50 @@ class Directory(Path):
         for the directories and `File.remove` for the files (or anything else).
         """
 
+    def mkdir(
+            self,
+            mode:          Optional[int]  = None,
+            *,
+            ignore_exists: Optional[bool] = None
+    ) -> None:
+        """
+        Create the directory on your system, call `os.mkdir` internally.
+
+        @param mode
+            Specify the access permissions for the directory, can be a
+            permission mask (0o600), can be a combination (0o600|stat.S_IFREG),
+            can be a bitwise (33152). Default is 0o777.
+
+            This parameter is ignored if your platform is Windows.
+
+        @param ignore_exists
+            If the directory already exists, call this method will raise
+            `FileExistsError`. But, if this parameter is set to True then
+            silently skip. Default False.
+        """
+
+    def makedirs(
+            self,
+            mode:     Optional[int]  = None,
+            *,
+            exist_ok: Optional[bool] = None
+    ) -> None:
+        """
+        Create the directory and all intermediate ones, super version of
+        `self.mkdir`. Call `os.makedirs` internally.
+
+        @param mode
+            Specify the access permissions for the directory, can be a
+            permission mask (0o600), can be a combination (0o600|stat.S_IFREG),
+            can be a bitwise (33152). Default is 0o777.
+
+            This parameter is ignored if your platform is Windows.
+
+        @param exist_ok
+            If the directory already exists will raise `FileExistsError`, can
+            set this parameter to True to silence the exception. Default False.
+        """
+
     def rmdir(self) -> None:
         """Delete the directory on your system, if the directory is not empty
         then raise `OSError`. Call `os.rmdir` internally."""
@@ -827,8 +971,7 @@ class Directory(Path):
 
         @param ignore_errors
             If the directory does not exist will raise `FileNotFoundError`, can
-            set this parameter to True to silence the exception. Default is
-            False.
+            set this parameter to True to silence the exception. Default False.
 
         @param onerror
             An optional error handler, described more see `shutil.rmtree`.
@@ -837,7 +980,7 @@ class Directory(Path):
     def chdir(self) -> None:
         """Change the working directory of the current process to the directory.
         """
-        os.chdir(self.path)
+        os.chdir(self.name)
 
 
 class File(Path):
@@ -848,56 +991,30 @@ class File(Path):
     def open(self) -> 'Open':
         return Open(self)
 
-    @property
-    def content(self) -> 'Content':
-        return Content(self.path)
+    content = property(
+        lambda self         : self.contents.read(),
+        lambda self, content: self.contents.overwrite(content),
+        lambda self         : self.contents.clear(),
+        """Quickly read, rewrite, or empty all contents of the file (in binary
+        mode)."""
+    )
 
-    @content.setter
-    def content(self, content: ['Content', bytes]) -> None:
+    @property
+    def contents(self) -> 'Content':
+        """Operation the file content, super version of `self.content`."""
+        return Content(self.name)
+
+    @contents.setter
+    def contents(self, content: ['Content', bytes]) -> None:
         """Do nothing, syntax hints for compatibility with `Content.__iadd__`
         and `Content.__ior__` only."""
 
-    contents = property(
-        lambda self         : self.content.read(),
-        lambda self, content: self.content.overwrite(content),
-        lambda self         : self.content.clear(),
-        """Simplified version of `self.content`, used to quickly read, rewrite,
-        or empty all contents of the file (in binary mode)."""
-    )
-
     def splitext(self) -> Tuple[BytesOrStr, BytesOrStr]:
-        return os.path.splitext(self.path)
+        return os.path.splitext(self.name)
 
     @property
     def extension(self) -> BytesOrStr:
-        return os.path.splitext(self.path)[1]
-
-    def mknod(
-            self,
-            mode:          int  = None,
-            *,
-            device:        int  = None,
-            ignore_exists: bool = None
-    ) -> None:
-        """
-        Create the file, call `os.mknod` internally, but if your platform is
-        Windows then internally call `open(self.path, 'x')`.
-
-        @param mode
-            Specify the access permissions of the file, can be a permission
-            mask (0o600), can be a combination (0o600|stat.S_IFREG), can be a
-            bitwise (33152), and default is 0o600(-rw-------).
-
-        @param device
-            Default 0, this parameter may not be available on your platform,
-            using them will ignore if unavailable. You can look up `os.mknod`
-            for more description.
-
-        @param ignore_exists
-            If the file already exists, call this method will raise
-            `FileExistsError`. But, if this parameter is set to True then
-            silently skip. Default False.
-        """
+        return os.path.splitext(self.name)[1]
 
     def copy(self, dst: Union['File', PathLink], /) -> Union['File', PathLink]:
         """
@@ -960,23 +1077,63 @@ class File(Path):
         """
 
     def truncate(self, length: int) -> None:
-        os.truncate(self.path, length)
+        os.truncate(self.name, length)
 
     def clear(self) -> None:
         self.truncate(0)
 
-    def remove(self) -> None:
-        os.remove(self.path, dir_fd=self.dir_fd)
+    def mknod(
+            self,
+            mode:          int  = None,
+            *,
+            device:        int  = None,
+            ignore_exists: bool = None
+    ) -> None:
+        """
+        Create the file, call `os.mknod` internally, but if your platform is
+        Windows then internally call `open(self.name, 'x')`.
+
+        @param mode
+            Specify the access permissions of the file, can be a permission
+            mask (0o600), can be a combination (0o600|stat.S_IFREG), can be a
+            bitwise (33152), and default is 0o600(-rw-------).
+
+        @param device
+            Default 0, this parameter may not be available on your platform,
+            using them will ignore if unavailable. You can look up `os.mknod`
+            for more description.
+
+        @param ignore_exists
+            If the file already exists, call this method will raise
+            `FileExistsError`. But, if this parameter is set to True then
+            silently skip. Default False.
+        """
+
+    def mknods(
+            self,
+            mode:          int  = None,
+            *,
+            device:        int  = None,
+            ignore_exists: bool = None
+    ) -> None:
+        """Create the file and all intermediate paths, super version of
+        `self.mknod`."""
+        parentdir = Directory(self.dirname)
+        if not parentdir.exists:
+            parentdir.makedirs(mode)
+        self.mknod(mode, device=device, ignore_exists=ignore_exists)
+
+    def remove(self, *, ignore_errors: Optional[bool] = None) -> None:
+        """
+        Remove the file, call `os.remove` internally.
+
+        @param ignore_errors
+            If the file does not exist will raise `FileNotFoundError`, can set
+            this parameter to True to silence the exception. Default False.
+        """
 
     def unlink(self) -> None:
-        os.unlink(self.path, dir_fd=self.dir_fd)
-
-    def md5(self, salting: Optional[bytes] = None) -> str:
-        """Return the hex digest value of the file content."""
-        warnings.warn(
-            f'will be deprecated soon, replaced to {self.content.md5}.',
-            DeprecationWarning
-        )
+        os.unlink(self.name, dir_fd=self.dir_fd)
 
 
 class Open:
@@ -1174,7 +1331,7 @@ class Open:
             *,
             bufsize:  Optional[int]                             = None,
             encoding: Optional[str]                             = None,
-            errors:   Optional[EncodingErrorHandlingMode]       = None,
+            errors:   Optional[str]                             = None,
             newline:  Optional[Literal['', '\n', '\r', '\r\n']] = None,
             opener:   Optional[Callable[[PathLink, int], int]]  = None
     ) -> TextIO: ...
@@ -1184,7 +1341,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1196,7 +1353,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1208,7 +1365,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1220,7 +1377,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1232,7 +1389,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1244,7 +1401,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1256,7 +1413,7 @@ class Open:
             *,
             bufsize:        Optional[int]                             = None,
             encoding:       Optional[str]                             = None,
-            errors:         Optional[EncodingErrorHandlingMode]       = None,
+            errors:         Optional[str]                             = None,
             newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
             line_buffering: Optional[bool]                            = None,
             write_through:  Optional[bool]                            = None,
@@ -1316,7 +1473,7 @@ class Content:
             self,
             dst:     Union['Content', BinaryIO],
             /, *,
-            bufsize: Optional[int]               = None
+            bufsize: Optional[int]              = None
     ) -> None:
         """
         Copy the file contents to another file.
@@ -1337,18 +1494,64 @@ class Content:
     def clear(self) -> None:
         self.truncate(0)
 
-    def md5(self, salting: bytes = b'') -> str:
-        """Return the hex digest value of the file content."""
-
 
 def tree(
-        dirpath:   PathLink,
+        dirpath:   Optional[PathLink] = None,
         /, *,
-        level:     Optional[int]  = None,
-        fullpath:  Optional[bool] = None,
-        bottom_up: Optional[bool] = None,
-        omit_dir:  Optional[bool] = None
-) -> Generator: ...
+        level:     Optional[int]      = None,
+        bottom_up: Optional[bool]     = None,
+        omit_dir:  Optional[bool]     = None,
+        idiocy:    Optional[bool]     = None,
+        shortpath: Optional[bool]     = None
+) -> Generator:
+    """
+    Directory tree generator, recurse the directory to get all subdirectories
+    and files.
+
+    @param dirpath:
+        Specify a directory path link, recurse this directory on call to get all
+        subdirectories and files, default is current working directory (the
+        return value of `os.getcwd()`).
+
+    @param level:
+        Recursion depth of the directory, default deepest. An int must be passed
+        in, any integer less than 1 is considered to be 1, warning passing
+        decimals can cause depth confusion.
+
+    @param bottom_up:
+        By default, the outer path is yielded first, from which the inner path
+        is yielded. If your requirements are opposite, set this parameter to
+        True.
+
+    @param omit_dir:
+        Omit all subdirectories when yielding paths. Default False.
+
+    @param idiocy:
+        By default, if the subpath is a directory then yield a `Directory`
+        object, if the subpath is a file then yield a `File` object. If set this
+        parameter to True, directly yield the path link string (or bytes). Only
+        SB uses this parameter.
+
+    @param shortpath:
+        Yield short path link string, delete the `dirpath` from the left end of
+        the path, used with the parameter `idiocy`. Default False.
+    """
+
+
+class SystemPath(Directory, File):
+
+    def __init__(
+            self,
+            root:    Optional[PathLink] = None,
+            /,
+            autoabs: Optional[bool]     = False,
+            strict:  Optional[bool]     = False
+    ):
+        super().__init__(
+            '.' if root == '' else b'.' if root == b'' else root,
+            autoabs=autoabs,
+            strict =strict
+        )
 
 
 class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
@@ -1402,11 +1605,11 @@ class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
        QLLLLLYLYYYYLLLLLPLLLLLLLYLYLLLLLLLLLLLLLLLLLLLQYYLLLLLLLLYP
        YYLYYLLYYYQLLLLLLLLYLLLLLLLLLLLLLLLLLLLLLLYLYLLYQYYLLLLLLYL
         QLLLLLLYQYLLLLLLLLLLLLLLLLLLLLLYYLYLLLLLLLLLLLYQQQQQQQLYL  """
-    gpath = f'{__name__}.g {__name__[7:]}'
+    gpath = f'{__name__}.gqylpy {__name__}'
     __import__(gpath)
 
     gpack = sys.modules[__name__]
-    gcode = globals()[f'g {__name__[7:]}']
+    gcode = globals()[f'gqylpy {__name__}']
 
     for gname in globals():
         if gname[0] != '_':

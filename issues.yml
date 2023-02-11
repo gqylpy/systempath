@@ -1,5 +1,5 @@
 - issue: "关于文件移动或重命名，Python中内置了多种方案，我们如何选择"
-  location: "gqylpy_filesystem.File.{rename,renames,replace,move}"
+  location: "systempath.g systempath.File.{rename,renames,replace,move}"
   create: 2022-10-07
   labels: question
   status: Processed
@@ -66,7 +66,7 @@
             # Move the file, call `shutil.move` internally.
 
 - issue: "当目标路径是相对的且没有任何上级路径时，目标路径几乎 “追随” 原路径的上一级路径"
-  location: "gqylpy_filesystem.g filesystem.dst2abs"
+  location: "systempath.g systempath.dst2abs"
   create: 2022-10-30
   labels: question
   status: Processed
