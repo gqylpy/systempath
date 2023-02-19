@@ -1,9 +1,6 @@
-from systempath import SystemPath, Directory, File
+from systempath import Directory, File
 
-root = SystemPath('/')
-
-home: Directory = root['home']['gqylpy']
-home.makedirs()
+home: Directory = Directory.home()
 
 file: File = home['alpha.txt']
 

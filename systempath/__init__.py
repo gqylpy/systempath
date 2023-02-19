@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.alpha8
+    @version: 1.0
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -1544,11 +1544,11 @@ class SystemPath(Directory, File):
             self,
             root:    Optional[PathLink] = None,
             /,
-            autoabs: Optional[bool]     = False,
-            strict:  Optional[bool]     = False
+            autoabs: Optional[bool]     = None,
+            strict:  Optional[bool]     = None
     ):
         super().__init__(
-            '.' if root == '' else b'.' if root == b'' else root,
+            '.' if root in (None, '') else b'.' if root == b'' else root,
             autoabs=autoabs,
             strict =strict
         )
