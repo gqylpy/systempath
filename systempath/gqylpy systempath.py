@@ -32,8 +32,11 @@ if sys.platform != 'win32':
     from os import mknod, chown, system, popen
 
     if sys.platform == 'linux':
-        from os import getxattr, setxattr, listxattr, removexattr
-
+        try:
+            from os import getxattr, setxattr, listxattr, removexattr
+        except ImportError:
+            def getxattr(*a, **kw): raise NotImplementedError
+            setxattr = listxattr = removexattr = getxattr
     try:
         from os import lchmod, lchown, chflags, lchflags
     except ImportError:

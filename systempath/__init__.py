@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0
+    @version: 1.0.1
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -1084,10 +1084,10 @@ class File(Path):
 
     def mknod(
             self,
-            mode:          int  = None,
+            mode:          Optional[int]  = None,
             *,
-            device:        int  = None,
-            ignore_exists: bool = None
+            device:        Optional[int]  = None,
+            ignore_exists: Optional[bool] = None
     ) -> None:
         """
         Create the file, call `os.mknod` internally, but if your platform is
@@ -1111,16 +1111,14 @@ class File(Path):
 
     def mknods(
             self,
-            mode:          int  = None,
+            mode:          Optional[int]  = None,
             *,
-            device:        int  = None,
-            ignore_exists: bool = None
+            device:        Optional[int]  = None,
+            ignore_exists: Optional[bool] = None
     ) -> None:
         """Create the file and all intermediate paths, super version of
         `self.mknod`."""
-        parentdir = Directory(self.dirname)
-        if not parentdir.exists:
-            parentdir.makedirs(mode)
+        self.dirname.makedirs(mode, exist_ok=True)
         self.mknod(mode, device=device, ignore_exists=ignore_exists)
 
     def remove(self, *, ignore_errors: Optional[bool] = None) -> None:
@@ -1133,7 +1131,7 @@ class File(Path):
         """
 
     def unlink(self) -> None:
-        os.unlink(self.name, dir_fd=self.dir_fd)
+        """Remove the file, like `self.remove`, call `os.unlink` internally."""
 
 
 class Open:
