@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.1
+    @version: 1.0.2
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -742,7 +742,7 @@ class Directory(Path):
 
     def __getitem__(
             self, name: BytesOrStr
-    ) -> Union['SystemPath', 'Directory', 'File']:
+    ) -> Union['SystemPath', 'Directory', 'File', 'Path']:
         path: PathLink = os.path.join(self.name, name)
 
         if self.strict:
@@ -750,7 +750,9 @@ class Directory(Path):
                 return Directory(path, strict=self.strict)
             if os.path.isfile(path):
                 return File(path)
-            if not os.path.exists(path):
+            if os.path.exists(name):
+                return Path(name)
+            else:
                 raise SystemPathNotFoundError
         else:
             return SystemPath(path)

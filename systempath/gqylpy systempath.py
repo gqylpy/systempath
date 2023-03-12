@@ -650,13 +650,17 @@ class Directory(Path):
             ) from None
 
     @joinpath
-    def __getitem__(self, name: PathLink) -> Union['Path', 'Directory', 'File']:
+    def __getitem__(
+            self, name: PathLink
+    ) -> Union['SystemPath', 'Directory', 'File', 'Path']:
         if self.strict:
             if isdir(name):
                 return Directory(name, strict=self.strict)
             if isfile(name):
                 return File(name)
-            if not exists(name):
+            if exists(name):
+                return Path(name)
+            else:
                 raise ge.SystemPathNotFoundError(
                     f'system path {repr(name)} does not exist.'
                 )
