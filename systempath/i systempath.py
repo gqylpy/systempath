@@ -690,7 +690,7 @@ class Directory(Path):
         return self.__iter__()
 
     @property
-    def subpaths_names(self) -> List[BytesOrStr]:
+    def subpath_names(self) -> List[BytesOrStr]:
         return listdir(self.name)
 
     def scandir(self) -> Iterator:
@@ -1248,14 +1248,18 @@ class SystemPath(Directory, File):
 
     def __init__(
             self,
-            root:    PathLink = '.',
-            /,
-            autoabs: bool     = False,
-            strict:  bool     = False
+            root:            PathLink      = '.',
+            /, *,
+            autoabs:         bool          = False,
+            strict:          bool          = False,
+            dir_fd:          Optional[int] = None,
+            follow_symlinks: bool          = True
     ):
         Path.__init__(
             self,
             '.' if root == '' else b'.' if root == b'' else root,
-            autoabs=autoabs,
-            strict=strict
+            autoabs        =autoabs,
+            strict         =strict,
+            dir_fd         =dir_fd,
+            follow_symlinks=follow_symlinks
         )

@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.2
+    @version: 1.0.3
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -761,7 +761,7 @@ class Directory(Path):
         Path(os.path.join(self.name, name)).delete()
 
     def __iter__(self) -> Generator:
-        return self.subpath
+        return self.subpaths
 
     @staticmethod
     def home(
@@ -779,7 +779,7 @@ class Directory(Path):
         layer) in the directory."""
 
     @property
-    def subpaths_names(self) -> List[BytesOrStr]:
+    def subpath_names(self) -> List[BytesOrStr]:
         """Get the names of all subpaths (single layer) in the directory. Call
         `os.listdir` internally."""
 
@@ -1143,10 +1143,10 @@ class Open:
     >>> f: BinaryIO = Open('alpha.bin').rb()  # open for reading in binary mode.
     >>> f: TextIO   = Open('alpha.txt').r()   # open for reading in text mode.
 
-    Pass in an instance of `File` (or a file path) at instantiation time. At
-    instantiation time (do nothing) the file will not be opened, only when you
-    call one of the following methods, the file will be opened (call once, open
-    once), open mode equals method name (where method `rb_plus` equals mode
+    Pass in an instance of `File` (or a file path link) at instantiation time.
+    At instantiation time (do nothing) the file will not be opened, only when
+    you call one of the following methods, the file will be opened (call once,
+    open once), open mode equals method name (where method `rb_plus` equals mode
     "rb+").
 
     ============================== IN BINARY MODE ==============================
@@ -1543,7 +1543,7 @@ class SystemPath(Directory, File):
     def __init__(
             self,
             root:    Optional[PathLink] = None,
-            /,
+            /, *,
             autoabs: Optional[bool]     = None,
             strict:  Optional[bool]     = None
     ):
@@ -1555,61 +1555,11 @@ class SystemPath(Directory, File):
 
 
 class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
-    """  QYYYQLLYYYYYYYQLYYQYYQQQYQQYQQQQQQQQQQQQQQQQQQQQQQYYYQQQQQQYL
-        YYYYQYLLQYLLYYQYYYYYYYQQYQYQYQQQQQQQQQQQQQQQQQQQQQQQYYYQQQQQQ
-        QYYYYLPQYLPLYYYLLYYYYYYYYQQQYQQQQQQQQQQQQQQQQQQQQQQQYYYYQQQQQP
-        QYYQLPLQYLLYYQPLLLYYYYYYQYYQYQQQQQQQQQQQQQQYQQQQQQQQYYQYQQQQQQP
-       QYYQYLLYYYLLYQYLLYYYYYYYYQYYQYQYYYQQQQQQQQQQYQQQQQQYQQYQYYQQQQQYP
-      LQYQYYYYQYYYYYQYYYYYYYYYYYYYYYQQYYYYYYYYYQQQQYQQQQQQYQQYQYYQQQQQQ P
-      QYQQYYYYQYYYQQQYYYYYYYYQYQYYYYQQYYYQYQYYQQQQYQQQQQQQYQQYQYYQQQQQQ P
-      QYQQYYYYQYYYQQQYYYYYYYYQYQYYYYYQYYYYQYYYQQQQYQQQQQQQYQQYQQYQQQQYYP
-      QYQYYYYYQYYYQQQ PYLLLYP PLYYYYYYQYYYYYYQQQQYYQQQQQQYQQYQQQYQQQQYQ
-      PQQYYYYYQYYQQYQQQQQQQQQQYP        PPLYQYQYQYQLQQQQQYQQYQQQYYQQQYY
-       QQYYYYYQQYQLYQQPQQQQQL QYL           PPYYLYYLQYQQYYQYQQQQYYQPQYL
-       YQYYYYQQQYQ  LYLQQQQQQYQQ           YQQQQQGQQQQQQYQYYQQQQYQPQYQ P
-      L QYYYYQQLYQ   Y YPYQQQQQ           LQQQQQL YQQQQYQQYQYQQYYQQYQP P
-        YYQYYQQ  Q    LQQQQQQY            YQYQQQQQQYYQYLQYQQYQQYYQYQL P
-     Y  LYQLQQPL Y     P  P                QLLQQQQQ Q  PQQQQYQQYYQQL P
-    P   PYQYQQQQPQ                         PQQQQQQY    QQYQYYQQYYQPP
-    L    QQQYQ YYYY              PQ           L  P    LPQYQYYQQLQ P
-    Y   PPQQYYL LYQL                                 PQLQYQQYQYQ  L
-    Y     QQYQPP PYQY        PQ                      Q  QQYQYQYL  L
-    Y     QQYYQ L  QYQP         PLLLLLYL           LQQ LQYYQQQP P L
-     L   PPLQYYQ Y  LQQQ                         LQYQ  QYYYQQ     P
-      L    Q  QYQ  Y  QQPYL                   PQYYYYPPQYYQQQP    L
-       L    L  PQQL   LYQ  PQP             QL PYYYPLQLYQ  QY P   Y
-         P   P    PQQP  QY  QLLQQP   LYYLQ   PQYPQQQP P  QY P   L
-                       PYQYYY           PQ  PQ      L   Q P    L
-              PQYLYYYPQ PLPL             L QY YQYYQYLYQQQ    P
-            PYLLLLLYYYQ P  L    P         PYL  PQYYLLLLLLLQ
-           LYPLLLLLLYYYY   Y  YQY     LLLPPY   LYYYLLLLLLLLY
-           YLLLYLLLLLLYYQ  Q              PQ  YYYLLLLLLLLLLYP
-          YLLLLLLLLLLLLLLYQQ              PYYQYYLLLLLLLLYYYLQ
-          QLLLLLLLLLLLLLLLLLYYQYP        YQYYLLLLLLLLLLLLLLLQ
-          YLLLLLLLLLLLLLLLLLLLYYYLLYYYLLLLLLLLLLLLLLLLLLLLLLYP
-         PLLLLLLLLLLLLLLLLLLLLLLLYLLLLLLLLLLLLLLLLLLLLLLLYLYLL
-         LLLLLLLLLLYYLLLLLLYLLLLLLLLLLLLLLLL GQYLPY LLLYLYLLLY
-         QLLLLYYLYLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLQYYYYLLQ
-         QLLLLLYYQYLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLQLYYLLLQ
-        LYLLYLLLQYYLLLLLLLLLLLLLLLLLLLLLLLLLLLLLYLLLLLQYYYYYLYQ
-        YLLLYYLLYQYLLLLLLLLLLLLLLLLLLLLLLLLLLLLYLLLLLYYYYQLLLLY
-        QLLLYYYYYQLLLLLLLLLLLLLLYLLLLLLLLLLLLLLLLLLLLYYYLQLLPLLQ
-        YLYLLQYYYQLLLLLLLLLLLLLLLLLLLLLLLLLLLLYYLLLLLYYQYYLLLLLQ
-       LYLLLLLYYYQLLYLLLLLLLLLLLLYLYLLYYLLLLYLLLLLLLYYYQQLLLLLLLY
-       YLLLLLLYYYQLLYLLLLLLLYLYLLLLLLLLLLLLLLLLLLLLYYYYQQLYLLLLLQ
-       QLLLYLLLQYQLQLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLYYYQYYLLLLLLLY
-       QLLLLLLLLQQYQLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLQYYQYYLLLLLLLQ
-       QLLLLLLLLLQQYLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLYYYYLLLLLLLLLYL
-       QLLLLYLYYLYQLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLQYYYLLLLLLLLLQ
-       YLLLLLLLYYLQLLLLLLLLLLLLLLLLLLLLLLLLLYLLLLLLLLYQYYLLLLLLLLLQ
-       QLLLLLYLYYYYLLLLLPLLLLLLLYLYLLLLLLLLLLLLLLLLLLLQYYLLLLLLLLYP
-       YYLYYLLYYYQLLLLLLLLYLLLLLLLLLLLLLLLLLLLLLLYLYLLYQYYLLLLLLYL
-        QLLLLLLYQYLLLLLLLLLLLLLLLLLLLLLYYLYLLLLLLLLLLLYQQQQQQQLYL  """
-    gpath = f'{__name__}.gqylpy {__name__}'
+    gpath = f'{__name__}.i {__name__}'
     __import__(gpath)
 
     gpack = sys.modules[__name__]
-    gcode = globals()[f'gqylpy {__name__}']
+    gcode = globals()[f'i {__name__}']
 
     for gname in globals():
         if gname[0] != '_':
