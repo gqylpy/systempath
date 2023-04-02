@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.3
+    @version: 1.0.4
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -67,8 +67,7 @@ class Path:
         @param name
             A path link, hopefully absolute. If it is a relative path, the
             current working directory is used as the parent directory (the
-            return value of `os.getcwd()`). The current working directory is
-            used by default.
+            return value of `os.getcwd()`).
 
         @param autoabs
             Automatically normalize the path link and convert to absolute path,
@@ -740,9 +739,7 @@ class Directory(Path):
         except SystemPathNotFoundError:
             raise AttributeError
 
-    def __getitem__(
-            self, name: BytesOrStr
-    ) -> Union['SystemPath', 'Directory', 'File', 'Path']:
+    def __getitem__(self, name: BytesOrStr) -> Path:
         path: PathLink = os.path.join(self.name, name)
 
         if self.strict:
@@ -1465,7 +1462,7 @@ class Content:
         """Overwrite the current file content from another file content (or a
         bytes object)."""
 
-    def append(self, content: Union['Content', bytes]) -> None:
+    def append(self, content: Union['Content', bytes], /) -> None:
         """Append the another file contents (or a bytes object) to the current
         file."""
 

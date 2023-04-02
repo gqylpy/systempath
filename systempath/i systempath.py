@@ -650,9 +650,7 @@ class Directory(Path):
             ) from None
 
     @joinpath
-    def __getitem__(
-            self, name: PathLink
-    ) -> Union['SystemPath', 'Directory', 'File', 'Path']:
+    def __getitem__(self, name: PathLink) -> Path:
         if self.strict:
             if isdir(name):
                 return Directory(name, strict=self.strict)
@@ -1117,7 +1115,7 @@ class Content(Open):
     def overwrite(self, content: Union['Content', bytes], /) -> None:
         self.__ior__(content)
 
-    def append(self, content: Union['Content', bytes]) -> None:
+    def append(self, content: Union['Content', bytes], /) -> None:
         self.__iadd__(content)
 
     def copy(
