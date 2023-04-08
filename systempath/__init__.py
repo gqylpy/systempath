@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.4
+    @version: 1.0.5
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -739,7 +739,9 @@ class Directory(Path):
         except SystemPathNotFoundError:
             raise AttributeError
 
-    def __getitem__(self, name: BytesOrStr) -> Path:
+    def __getitem__(
+            self, name: BytesOrStr
+    ) -> Union['SystemPath', 'Directory', 'File', Path]:
         path: PathLink = os.path.join(self.name, name)
 
         if self.strict:
@@ -1559,12 +1561,12 @@ class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
     gcode = globals()[f'i {__name__}']
 
     for gname in globals():
-        if gname[0] != '_':
-            try:
-                gfunc = getattr(gcode, gname)
-                if gfunc.__module__ is gpath:
-                    gfunc.__module__ = __package__
-                    gfunc.__doc__ = getattr(gpack, gname).__doc__
-                    setattr(gpack, gname, gfunc)
-            except AttributeError:
-                pass
+        try:
+            assert gname[0] != '_'
+            gfunc = getattr(gcode, gname)
+            assert gfunc.__module__ == gpath
+        except (AssertionError, AttributeError):
+            continue
+        gfunc.__module__ = __package__
+        gfunc.__doc__ = getattr(gpack, gname).__doc__
+        setattr(gpack, gname, gfunc)

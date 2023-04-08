@@ -650,7 +650,9 @@ class Directory(Path):
             ) from None
 
     @joinpath
-    def __getitem__(self, name: PathLink) -> Path:
+    def __getitem__(
+            self, name: PathLink
+    ) -> Union['SystemPath', 'Directory', 'File', Path]:
         if self.strict:
             if isdir(name):
                 return Directory(name, strict=self.strict)
