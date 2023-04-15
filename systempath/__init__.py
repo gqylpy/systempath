@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.5
+    @version: 1.0.6
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -1054,7 +1054,7 @@ class File(Path):
         @return: The parameter `dst` is passed in, without any modification.
         """
         warnings.warn(
-            f'will be deprecated soon, replaced to {self.content.copy}.',
+            f'will be deprecated soon, replaced to {self.contents.copy}.',
             DeprecationWarning
         )
 
