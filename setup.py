@@ -1,10 +1,10 @@
 import setuptools
 import pkg_resources
-import systempath as g
+import systempath as i
 
 from systempath import File
 
-with File(g.__file__).open.r() as f:
+with File(i.__file__).open.r(encoding='utf8') as f:
     for line in f:
         if line.startswith('@version: ', 4):
             version = line.split()[-1]
@@ -12,21 +12,21 @@ with File(g.__file__).open.r() as f:
     author, email = f.readline().split(maxsplit=1)[-1].rstrip().split()
     source = f.readline().split()[-1]
 
-with File('requirements.txt').open.r() as f:
+with File('requirements.txt').open.r(encoding='utf8') as f:
     requires = [str(x) for x in pkg_resources.parse_requirements(f)]
 
 setuptools.setup(
-    name=g.__name__,
+    name=i.__name__,
     version=version,
     author=author,
     author_email=email,
     license='Apache 2.0',
     url='http://gqylpy.com',
     project_urls={'Source': source},
-    description='Operating system paths and files.',
-    long_description=open('README.md').read(),
+    description='(OOP) Operating system paths and files.',
+    long_description=open('README.md', encoding='utf8').read(),
     long_description_content_type='text/markdown',
-    packages=[g.__name__],
+    packages=[i.__name__],
     python_requires='>=3.8, <4',
     install_requires=requires,
     classifiers=[

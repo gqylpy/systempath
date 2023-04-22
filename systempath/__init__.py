@@ -1,4 +1,4 @@
-"""Operating system paths and files.
+"""(OOP) Operating system paths and files.
 
 Let Python operating system paths and files become Simple, Simpler, Simplest,
 Humanization, Unification, Flawless.
@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.6
+    @version: 1.0.7
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -39,11 +39,10 @@ limitations under the License.
 """
 import os
 import sys
-import warnings
 
 from typing import (
     TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO, Callable,
-    Generator, Iterator, Any
+    Generator, Iterator
 )
 
 BytesOrStr = TypeVar('BytesOrStr', bytes, str)
@@ -120,6 +119,17 @@ class Path:
         self.strict          = strict
         self.dir_fd          = dir_fd
         self.follow_symlinks = follow_symlinks
+
+    def __bytes__(self) -> bytes:
+        """Return the path of type bytes."""
+
+    def __eq__(self, other: ['Path', PathLink], /) -> bool:
+        """Return True if the absolute path of the path instance is equal to the
+        absolute path of another path instance (can also be a path link
+        character) else False."""
+
+    def __ne__(self, other: ['Path', PathLink], /) -> bool:
+        return not self.__eq__(other)
 
     @property
     def basename(self) -> BytesOrStr:
@@ -733,12 +743,6 @@ class Directory(Path):
     """Pass a directory path link to get a directory object, which you can then
     use to do anything a directory can do."""
 
-    def __getattr__(self, name: BytesOrStr) -> Any:
-        try:
-            return self[name]
-        except SystemPathNotFoundError:
-            raise AttributeError
-
     def __getitem__(
             self, name: BytesOrStr
     ) -> Union['SystemPath', 'Directory', 'File', Path]:
@@ -789,19 +793,19 @@ class Directory(Path):
     def tree(
             self,
             *,
-            level:     Optional[int]  = None,
-            bottom_up: Optional[bool] = None,
-            omit_dir:  Optional[bool] = None,
-            idiocy:    Optional[bool] = None,
-            shortpath: Optional[bool] = None
+            level:      Optional[int]  = None,
+            bottom_up:  Optional[bool] = None,
+            omit_dir:   Optional[bool] = None,
+            mysophobia: Optional[bool] = None,
+            shortpath:  Optional[bool] = None
     ) -> Generator:
         return tree(
             self.name,
-            level    =level,
-            bottom_up=bottom_up,
-            omit_dir =omit_dir,
-            idiocy   =idiocy,
-            shortpath=shortpath
+            level     =level,
+            bottom_up =bottom_up,
+            omit_dir  =omit_dir,
+            mysophobia=mysophobia,
+            shortpath =shortpath
         )
 
     def walk(
@@ -1431,19 +1435,19 @@ class Content:
     def __bytes__(self) -> bytes:
         return self.read()
 
-    def __ior__(self, content: Union['Content', bytes]) -> 'Content':
+    def __ior__(self, content: Union['Content', bytes], /) -> 'Content':
         self.overwrite(content)
         return self
 
-    def __iadd__(self, content: Union['Content', bytes]) -> 'Content':
+    def __iadd__(self, content: Union['Content', bytes], /) -> 'Content':
         self.append(content)
         return self
 
-    def __eq__(self, content: Union['Content', bytes]) -> bool:
+    def __eq__(self, content: Union['Content', bytes], /) -> bool:
         """Whether the current file content equals the another file content (or
         a bytes object)."""
 
-    def __ne__(self, content: Union['Content', bytes]) -> bool:
+    def __ne__(self, content: Union['Content', bytes], /) -> bool:
         """Whether the current file content is not equal to another file content
         (or a byte object)."""
 
@@ -1495,45 +1499,46 @@ class Content:
 
 
 def tree(
-        dirpath:   Optional[PathLink] = None,
+        dirpath:    Optional[PathLink] = None,
         /, *,
-        level:     Optional[int]      = None,
-        bottom_up: Optional[bool]     = None,
-        omit_dir:  Optional[bool]     = None,
-        idiocy:    Optional[bool]     = None,
-        shortpath: Optional[bool]     = None
+        level:      Optional[int]      = None,
+        bottom_up:  Optional[bool]     = None,
+        omit_dir:   Optional[bool]     = None,
+        mysophobia: Optional[bool]     = None,
+        shortpath:  Optional[bool]     = None
 ) -> Generator:
     """
     Directory tree generator, recurse the directory to get all subdirectories
     and files.
 
-    @param dirpath:
+    @param dirpath
         Specify a directory path link, recurse this directory on call to get all
         subdirectories and files, default is current working directory (the
         return value of `os.getcwd()`).
 
-    @param level:
-        Recursion depth of the directory, default deepest. An int must be passed
+    @param level
+        Recursion depth of the directory, default is maximum recursive depth
+        (the return value of `sys.getrecursionlimit()`). An int must be passed
         in, any integer less than 1 is considered to be 1, warning passing
         decimals can cause depth confusion.
 
-    @param bottom_up:
+    @param bottom_up
         By default, the outer path is yielded first, from which the inner path
         is yielded. If your requirements are opposite, set this parameter to
         True.
 
-    @param omit_dir:
+    @param omit_dir
         Omit all subdirectories when yielding paths. Default False.
 
-    @param idiocy:
+    @param mysophobia
         By default, if the subpath is a directory then yield a `Directory`
         object, if the subpath is a file then yield a `File` object. If set this
-        parameter to True, directly yield the path link string (or bytes). Only
-        SB uses this parameter.
+        parameter to True, directly yield the path link string (or bytes). This
+        parameter is not recommended for use.
 
-    @param shortpath:
+    @param shortpath
         Yield short path link string, delete the `dirpath` from the left end of
-        the path, used with the parameter `idiocy`. Default False.
+        the path, used with the parameter `mysophobia`. Default False.
     """
 
 

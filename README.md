@@ -6,7 +6,7 @@
 
 # systempath
 
-> Operating system paths and files.  
+> (OOP) Operating system paths and files.  
 > Let Python operating system paths and files become Simple, Simpler, Simplest, Humanization, Unification, Flawless.
 
 <kbd>pip3 install systempath</kbd>

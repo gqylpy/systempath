@@ -1,1 +1,1 @@
-gqylpy_exception>=1.3.2,<2.0
+gqylpy_exception>=2.0

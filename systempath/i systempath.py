@@ -49,9 +49,9 @@ if sys.platform != 'win32':
         def getpwuid(_): raise NotImplementedError
         getgrgid = getpwuid
 
-    READ_BUFFER_SIZE = 1024 * 64
+    __read_bufsize__ = 1024 * 64
 else:
-    READ_BUFFER_SIZE = 1024 * 1024
+    __read_bufsize__ = 1024 * 1024
 
 from os.path import (
     basename, dirname,    abspath,  realpath,   relpath,
@@ -70,14 +70,14 @@ from stat import S_ISDIR, S_ISREG, S_ISBLK, S_ISCHR, S_ISFIFO
 from _io import (
     FileIO, BufferedReader, BufferedWriter, BufferedRandom, TextIOWrapper,
     _BufferedIOBase     as BufferedIOBase,
-    DEFAULT_BUFFER_SIZE as IO_BUFFER_SIZE
+    DEFAULT_BUFFER_SIZE as __io_bufsize__
 )
 
 from hashlib import md5
 
 from typing import (
-    TypeVar, Literal, Optional, Type, Union, Tuple, List, Callable, Generator,
-    Iterator, Iterable, NoReturn, Any
+    TypeVar, Type, Literal, Optional, Union, Tuple, List, Final, Callable,
+    Generator, Iterator, Iterable, NoReturn, Any
 )
 
 import gqylpy_exception as ge
@@ -101,6 +101,8 @@ EncodingErrorHandlingMode = Literal[
     'backslashreplace',
     'namereplace'
 ]
+
+__unique__: Final = object()
 
 
 class MasqueradeClass(type):
@@ -163,11 +165,16 @@ class ReadOnlyMode(type, metaclass=MasqueradeClass):
 
 class ReadOnly(metaclass=ReadOnlyMode):
     # Disallow modifying the attributes of the instances externally.
-    __dict__ = {}
+
+    # __dict__ = {}
+    # Tamper with attribute `__dict__` to avoid modifying its subclass instance
+    # attribute externally, but the serious problem is that it cannot
+    # deserialize its subclass instance after tampering. Stop tampering for the
+    # moment, the solution is still in the works.
 
     def __setattr__(self, name: str, value: Any) -> None:
         if sys._getframe().f_back.f_globals['__name__'] != __name__ and not \
-                (isinstance(self, File) or name not in ('content', 'contents')):
+                (isinstance(self, File) and name in ('content', 'contents')):
             raise ge.SetAttributeError(
                 f'cannot set "{name}" attribute in instance '
                 f'of immutable type "{self.__class__.__name__}".'
@@ -193,7 +200,8 @@ def dst2abs(func: Callable) -> Closure:
             singlename: bool = basename(dst) == dst
         except TypeError:
             raise ge.DestinationPathTypeError(
-                'destination path type can only be "bytes" or "str".'
+                'destination path type can only be "bytes" or "str", '
+                f'not "{dst.__class__.__name__}".'
             ) from None
         if singlename:
             try:
@@ -256,16 +264,20 @@ def testpath(testfunc: Callable[[int], bool], path: 'Path') -> bool:
 
 class Path(ReadOnly):
 
-    def __new__(cls, name: PathLink, /, strict: bool = False, **kw):
-        if name.__class__ not in (bytes, str):
-            raise ge.NotAPathError(
-                'path type can only be "bytes" or "str", '
-                f'not "{name.__class__.__name__}".'
-            )
-        if strict and not exists(name):
-            raise ge.SystemPathNotFoundError(
-                f'system path {repr(name)} does not exist.'
-            )
+    def __new__(
+            cls, name: PathLink = __unique__, /, strict: bool = False, **kw
+    ):
+        # Compatible object deserialization.
+        if name is not __unique__:
+            if name.__class__ not in (bytes, str):
+                raise ge.NotAPathError(
+                    'path type can only be "bytes" or "str", '
+                    f'not "{name.__class__.__name__}".'
+                )
+            if strict and not exists(name):
+                raise ge.SystemPathNotFoundError(
+                    f'system path {repr(name)} does not exist.'
+                )
         return object.__new__(cls)
 
     def __init__(
@@ -283,11 +295,36 @@ class Path(ReadOnly):
         self.follow_symlinks = follow_symlinks
 
     def __str__(self) -> str:
-        return self.name if self.name.__class__ is str else self.name.decode()
+        return self.name if self.name.__class__ is str else repr(self.name)
 
     def __repr__(self) -> str:
         return f'<{__package__}.{self.__class__.__name__} ' \
                f'name={repr(self.name)}>'
+
+    def __bytes__(self) -> bytes:
+        return self.name if self.name.__class__ is bytes else self.name.encode()
+
+    def __eq__(self, other: ['Path', PathLink], /) -> bool:
+        if isinstance(other, Path):
+            other_type   = other.__class__
+            other_path   = abspath(other.name)
+            other_dir_fd = other.dir_fd
+        elif other.__class__ in (bytes, str):
+            other_type   = Path
+            other_path   = abspath(other)
+            other_dir_fd = None
+        else:
+            return False
+
+        if self.name.__class__ is not other_path.__class__:
+            other_path = other_path.encode() \
+                if other_path.__class__ is str else other_path.decode()
+
+        return any((
+            self.__class__ == other_type,
+            self.__class__ in (Path, SystemPath),
+            other_type     in (Path, SystemPath)
+        )) and abspath(self.name) == other_path and self.dir_fd == other_dir_fd
 
     @property
     def basename(self) -> BytesOrStr:
@@ -560,10 +597,10 @@ class Path(ReadOnly):
             lchflags(self.name, flags)
 
         def chattr(self, operator: Literal['+', '-', '='], attrs: str) -> None:
-            warnings.warn(UserWarning(
+            warnings.warn(
                 'implementation of method `chattr` is to directly call the '
                 'system command `chattr`, so this is very unreliable.'
-            ))
+            , stacklevel=2)
             if operator not in ('+', '-', '='):
                 raise ge.ChattrError(
                     f'unsupported operation "{operator}", only "+", "-" or "=".'
@@ -573,10 +610,10 @@ class Path(ReadOnly):
                 raise ge.ChattrError(c)
 
         def lsattr(self) -> str:
-            warnings.warn(UserWarning(
+            warnings.warn(
                 'implementation of method `lsattr` is to directly call the '
                 'system command `lsattr`, so this is very unreliable.'
-            ))
+            , stacklevel=2)
             c: str = f'lsattr {self.name}'
             attrs: str = popen(
                 "sudo %s 2>/dev/null | awk '{print $1}'" % c
@@ -641,14 +678,6 @@ class Directory(Path):
 
         return instance
 
-    def __getattr__(self, name: str) -> Any:
-        try:
-            return self[name]
-        except ge.SystemPathNotFoundError:
-            raise AttributeError(
-                f"'{self.__class__.__name__}' object has no attribute '{name}'"
-            ) from None
-
     @joinpath
     def __getitem__(
             self, name: PathLink
@@ -699,19 +728,19 @@ class Directory(Path):
     def tree(
             self,
             *,
-            level:     int  = sys.getrecursionlimit(),
-            bottom_up: bool = False,
-            omit_dir:  bool = False,
-            idiocy:    bool = False,
-            shortpath: bool = False
+            level:      int  = sys.getrecursionlimit(),
+            bottom_up:  bool = False,
+            omit_dir:   bool = False,
+            mysophobia: bool = False,
+            shortpath:  bool = False
     ) -> Generator:
         return tree(
             self.name,
-            level    =level,
-            bottom_up=bottom_up,
-            omit_dir =omit_dir,
-            idiocy   =idiocy,
-            shortpath=shortpath
+            level     =level,
+            bottom_up =bottom_up,
+            omit_dir  =omit_dir,
+            mysophobia=mysophobia,
+            shortpath =shortpath
         )
 
     def walk(
@@ -787,7 +816,9 @@ class Directory(Path):
 
 class File(Path):
 
-    def __new__(cls, name: PathLink, /, strict: bool = False, **kw):
+    def __new__(
+            cls, name: PathLink = __unique__, /, strict: bool = False, **kw
+    ):
         instance = Path.__new__(cls, name, strict=strict, **kw)
 
         if strict and not isfile(name):
@@ -842,7 +873,7 @@ class File(Path):
             self,
             other:   Union['File', FileIO],
             /, *,
-            bufsize: int                   = READ_BUFFER_SIZE
+            bufsize: int                   = __read_bufsize__
     ) -> Union['File', FileIO]:
         write, read = (
             FileIO(other.name, 'wb') if isinstance(other, File) else other
@@ -927,7 +958,7 @@ class File(Path):
         read = FileIO(self.name).read
 
         while True:
-            content = read(READ_BUFFER_SIZE)
+            content = read(__read_bufsize__)
             if not content:
                 break
             m5.update(content)
@@ -989,7 +1020,7 @@ class Open(ReadOnly):
     def __pass__(self, buffer: Type[BufferedIOBase], mode: OpenMode) -> Closure:
         def init_buffer_instance(
                 *,
-                bufsize:        int                            = IO_BUFFER_SIZE,
+                bufsize:        int                            = __io_bufsize__,
                 encoding:       Optional[str]                       = None,
                 errors:         Optional[EncodingErrorHandlingMode] = None,
                 newline:        Optional[str]                       = None,
@@ -1028,7 +1059,7 @@ class Content(Open):
     def __bytes__(self) -> bytes:
         return self.rb().read()
 
-    def __ior__(self, content: Union['Content', bytes]) -> 'Content':
+    def __ior__(self, content: Union['Content', bytes], /) -> 'Content':
         if isinstance(content, Content):
             if abspath(content.__path__) == abspath(self.__path__):
                 raise ge.IsSameFileError(
@@ -1037,7 +1068,7 @@ class Content(Open):
                 )
             read, write = content.rb().read, self.wb().write
             while True:
-                content = read(READ_BUFFER_SIZE)
+                content = read(__read_bufsize__)
                 if not content:
                     break
                 write(content)
@@ -1053,11 +1084,11 @@ class Content(Open):
             )
         return self
 
-    def __iadd__(self, content: Union['Content', bytes]) -> 'Content':
+    def __iadd__(self, content: Union['Content', bytes], /) -> 'Content':
         if isinstance(content, Content):
             read, write = content.rb().read, self.ab().write
             while True:
-                content = read(READ_BUFFER_SIZE)
+                content = read(__read_bufsize__)
                 if not content:
                     break
                 write(content)
@@ -1071,36 +1102,33 @@ class Content(Open):
             )
         return self
 
-    def __eq__(self, content: Union['Content', bytes]) -> bool:
+    def __eq__(self, content: Union['Content', bytes], /) -> bool:
         if isinstance(content, Content):
             read1, read2 = self.rb().read, content.rb().read
             while True:
-                content1 = read1(READ_BUFFER_SIZE)
-                content2 = read2(READ_BUFFER_SIZE)
+                content1 = read1(__read_bufsize__)
+                content2 = read2(__read_bufsize__)
                 if content1 == content2 == b'':
                     return True
                 if content1 != content2:
                     return False
         elif content.__class__ is bytes:
-            start, end = 0, READ_BUFFER_SIZE
+            start, end = 0, __read_bufsize__
             read1 = self.rb().read
             while True:
-                content1 = read1(READ_BUFFER_SIZE)
+                content1 = read1(__read_bufsize__)
                 if content1 == content[start:end] == b'':
                     return True
                 if content1 != content[start:end]:
                     return False
-                start += READ_BUFFER_SIZE
-                end   += READ_BUFFER_SIZE
+                start += __read_bufsize__
+                end   += __read_bufsize__
         else:
             raise TypeError(
                 'content type to be equality judgment operation can only be '
                 f'"{__package__}.{Content.__name__}" or "bytes", '
                 f'not "{content.__class__.__name__}".'
             )
-
-    def __ne__(self, content: Union['Content', bytes]) -> bool:
-        return not self.__eq__(content)
 
     def __iter__(self) -> Generator:
         return (line.rstrip(b'\r\n') for line in self.rb())
@@ -1124,7 +1152,7 @@ class Content(Open):
             self,
             other:   Union['Content', FileIO],
             /, *,
-            bufsize: int                      = READ_BUFFER_SIZE
+            bufsize: int                      = __read_bufsize__
     ) -> None:
         write = (other.ab() if isinstance(other, Content) else other).write
         read  = self.rb().read
@@ -1146,7 +1174,7 @@ class Content(Open):
         read = self.rb().read
 
         while True:
-            content = read(READ_BUFFER_SIZE)
+            content = read(__read_bufsize__)
             if not content:
                 break
             m5.update(content)
@@ -1155,13 +1183,13 @@ class Content(Open):
 
 
 def tree(
-        dirpath:   Optional[PathLink] = None,
+        dirpath:    Optional[PathLink] = None,
         /, *,
-        level:     int                = sys.getrecursionlimit(),
-        bottom_up: bool               = False,
-        omit_dir:  bool               = False,
-        idiocy:    bool               = False,
-        shortpath: bool               = False
+        level:      int                = None,
+        bottom_up:  bool               = False,
+        omit_dir:   bool               = False,
+        mysophobia: bool               = False,
+        shortpath:  bool               = False
 ) -> Generator:
     if dirpath == b'':
         dirpath: bytes = getcwdb()
@@ -1170,26 +1198,26 @@ def tree(
 
     return __tree__(
         dirpath,
-        level    =level,
-        bottom_up=bottom_up,
-        omit_dir =omit_dir,
-        root     =dirpath,
-        nullchar =b'' if dirpath.__class__ is bytes else '',
-        idiocy   =idiocy,
-        shortpath=shortpath
+        level     =level or sys.getrecursionlimit(),
+        bottom_up =bottom_up,
+        omit_dir  =omit_dir,
+        root      =dirpath,
+        nullchar  =b'' if dirpath.__class__ is bytes else '',
+        mysophobia=mysophobia,
+        shortpath =shortpath
     )
 
 
 def __tree__(
-        dirpath:   PathLink,
+        dirpath:    PathLink,
         /, *,
-        level:     int,
-        bottom_up: bool,
-        omit_dir:  bool,
-        idiocy:    bool,
-        shortpath: bool,
-        root:      PathLink,
-        nullchar:  BytesOrStr
+        level:      int,
+        bottom_up:  bool,
+        omit_dir:   bool,
+        mysophobia: bool,
+        shortpath:  bool,
+        root:       PathLink,
+        nullchar:   BytesOrStr
 ) -> Generator:
     for name in listdir(dirpath):
         path: PathLink = join(dirpath, name)
@@ -1199,16 +1227,16 @@ def __tree__(
             if level > 1 and is_dir:
                 yield from __tree__(
                     path,
-                    level    =level - 1,
-                    bottom_up=bottom_up,
-                    omit_dir =omit_dir,
-                    idiocy   =idiocy,
-                    shortpath=shortpath,
-                    root     =root,
-                    nullchar =nullchar
+                    level     =level - 1,
+                    bottom_up =bottom_up,
+                    omit_dir  =omit_dir,
+                    mysophobia=mysophobia,
+                    shortpath =shortpath,
+                    root      =root,
+                    nullchar  =nullchar
                 )
             if not is_dir or not omit_dir:
-                if idiocy:
+                if mysophobia:
                     if shortpath:
                         path: PathLink = path.replace(root, nullchar)
                         if path[0] in (47, 92, '/', '\\'):
@@ -1219,7 +1247,7 @@ def __tree__(
                         File(path) if isfile(path) else Path(path)
         else:
             if not is_dir or not omit_dir:
-                if idiocy:
+                if mysophobia:
                     if not shortpath:
                         yield path
                     else:
@@ -1233,13 +1261,13 @@ def __tree__(
             if level > 1 and is_dir:
                 yield from __tree__(
                     path,
-                    level    =level - 1,
-                    bottom_up=bottom_up,
-                    omit_dir =omit_dir,
-                    idiocy   =idiocy,
-                    shortpath=shortpath,
-                    root     =root,
-                    nullchar =nullchar
+                    level     =level - 1,
+                    bottom_up =bottom_up,
+                    omit_dir  =omit_dir,
+                    mysophobia=mysophobia,
+                    shortpath =shortpath,
+                    root      =root,
+                    nullchar  =nullchar
                 )
 
 
