@@ -23,7 +23,7 @@ setuptools.setup(
     license='Apache 2.0',
     url='http://gqylpy.com',
     project_urls={'Source': source},
-    description='(OOP) Operating system paths and files.',
+    description='Operating system paths and files.',
     long_description=open('README.md', encoding='utf8').read(),
     long_description_content_type='text/markdown',
     packages=[i.__name__],

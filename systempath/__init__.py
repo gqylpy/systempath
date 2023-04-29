@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.7
+    @version: 1.0.8
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -1559,13 +1559,11 @@ class SystemPath(Directory, File):
 
 
 class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
+    gpack = globals()
     gpath = f'{__name__}.i {__name__}'
-    __import__(gpath)
+    gcode = __import__(gpath, fromlist=...)
 
-    gpack = sys.modules[__name__]
-    gcode = globals()[f'i {__name__}']
-
-    for gname in globals():
+    for gname in gpack:
         try:
             assert gname[0] != '_'
             gfunc = getattr(gcode, gname)
@@ -1573,5 +1571,5 @@ class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
         except (AssertionError, AttributeError):
             continue
         gfunc.__module__ = __package__
-        gfunc.__doc__ = getattr(gpack, gname).__doc__
-        setattr(gpack, gname, gfunc)
+        gfunc.__doc__ = gpack[gname].__doc__
+        gpack[gname] = gfunc
