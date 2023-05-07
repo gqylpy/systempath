@@ -128,6 +128,7 @@ class MasqueradeClass(type):
         )
 
         mcs.__name__     = type.__name__
+        mcs.__qualname__ = type.__qualname__
         cls.__module__   = __masquerade_class__.__module__
         cls.__qualname__ = __masquerade_class__.__qualname__
 
@@ -158,7 +159,7 @@ class ReadOnlyMode(type, metaclass=MasqueradeClass):
 
     def __delattr__(cls, name: str) -> NoReturn:
         raise ge.DeleteAttributeError(
-            f'cannot execute operation to delete attribute '
+            f'cannot delete "{name}" attribute '
             f'of immutable type "{cls.__name__}".'
         )
 
@@ -184,8 +185,8 @@ class ReadOnly(metaclass=ReadOnlyMode):
     def __delattr__(self, name: str) -> None:
         if not isinstance(self, File) or name != 'content':
             raise ge.DeleteAttributeError(
-                f'cannot execute operation to delete attribute in instance '
-                f'of immutable type "{File.__name__}".'
+                f'cannot delete "{name}" attribute in instance '
+                f'of immutable type "{self.__class__.__name__}".'
             )
         object.__delattr__(self, name)
 
@@ -1007,11 +1008,9 @@ class Open(ReadOnly):
         methods += self.__modes__
         return methods
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return f'<{__package__}.{self.__class__.__name__} ' \
                f'file={repr(self.__path__)}>'
-
-    __repr__ = __str__
 
     @property
     def __path__(self) -> PathLink:

@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.8
+    @version: 1.0.9
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -465,7 +465,7 @@ class Path:
         ).stat
 
     def getsize(self) -> int:
-        """Get the size of the file, Return 0 if the path is a directory."""
+        """Get the size of the file, return 0 if the path is a directory."""
         return os.path.getsize(self.name)
 
     def getctime(self) -> float:
