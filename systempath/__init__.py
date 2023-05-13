@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.9
+    @version: 1.0.10
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -1001,13 +1001,14 @@ class File(Path):
         lambda self, content: self.contents.overwrite(content),
         lambda self         : self.contents.clear(),
         """Quickly read, rewrite, or empty all contents of the file (in binary
-        mode)."""
+        mode). Note that for other operations on the file contents, use
+        `contents`."""
     )
 
     @property
     def contents(self) -> 'Content':
         """Operation the file content, super version of `self.content`."""
-        return Content(self.name)
+        return Content(self)
 
     @contents.setter
     def contents(self, content: ['Content', bytes]) -> None:
@@ -1435,21 +1436,21 @@ class Content:
     def __bytes__(self) -> bytes:
         return self.read()
 
-    def __ior__(self, content: Union['Content', bytes], /) -> 'Content':
-        self.overwrite(content)
+    def __ior__(self, other: Union['Content', bytes], /) -> 'Content':
+        self.overwrite(other)
         return self
 
-    def __iadd__(self, content: Union['Content', bytes], /) -> 'Content':
-        self.append(content)
+    def __iadd__(self, other: Union['Content', bytes], /) -> 'Content':
+        self.append(other)
         return self
 
-    def __eq__(self, content: Union['Content', bytes], /) -> bool:
-        """Whether the current file content equals the another file content (or
-        a bytes object)."""
+    def __eq__(self, other: Union['Content', bytes], /) -> bool:
+        """Whether the contents of the current file equal the contents of
+        another file (or a bytes object). If they all point to the same file
+        then direct return True."""
 
-    def __ne__(self, content: Union['Content', bytes], /) -> bool:
-        """Whether the current file content is not equal to another file content
-        (or a byte object)."""
+    def __ne__(self, other: Union['Content', bytes], /) -> bool:
+        return not self.__eq__(other)
 
     def __iter__(self) -> Generator:
         """Iterate over the file by line, omitting newline symbol and ignoring
@@ -1459,7 +1460,7 @@ class Content:
         """Return the length (actually the size) of the file contents."""
 
     def __bool__(self) -> bool:
-        """Return True if the file has content, False otherwise."""
+        """Return True if the file has content else False."""
 
     def read(self, size: int = -1, /) -> bytes:
         return Open(self.file).rb().read(size)

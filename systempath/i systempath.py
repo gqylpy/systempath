@@ -63,9 +63,15 @@ from os.path import (
 
 from shutil import move, copyfile, copytree, copystat, copymode, copy2, rmtree
 
-from pathlib import _ignore_error
+from pathlib import _ignore_error as ignore_error
 
-from stat import S_ISDIR, S_ISREG, S_ISBLK, S_ISCHR, S_ISFIFO
+from stat import (
+    S_ISDIR  as s_isdir,
+    S_ISREG  as s_isreg,
+    S_ISBLK  as s_isblk,
+    S_ISCHR  as s_ischr,
+    S_ISFIFO as s_isfifo
+)
 
 from _io import (
     FileIO, BufferedReader, BufferedWriter, BufferedRandom, TextIOWrapper,
@@ -255,11 +261,11 @@ def testpath(testfunc: Callable[[int], bool], path: 'Path') -> bool:
         return testfunc(path.stat.st_mode)
     except OSError as e:
         # Path does not exist or is a broken symlink.
-        if not _ignore_error(e):
+        if not ignore_error(e):
             raise
         return False
     except ValueError:
-        # Non-encodable path
+        # Non-encodable path.
         return False
 
 
@@ -306,6 +312,9 @@ class Path(ReadOnly):
         return self.name if self.name.__class__ is bytes else self.name.encode()
 
     def __eq__(self, other: ['Path', PathLink], /) -> bool:
+        if self is other:
+            return True
+
         if isinstance(other, Path):
             other_type   = other.__class__
             other_path   = abspath(other.name)
@@ -410,7 +419,7 @@ class Path(ReadOnly):
         try:
             self.stat
         except OSError as e:
-            if not _ignore_error(e):
+            if not ignore_error(e):
                 raise
             return False
         except ValueError:
@@ -422,7 +431,7 @@ class Path(ReadOnly):
         try:
             stat(self.name, dir_fd=self.dir_fd, follow_symlinks=False)
         except OSError as e:
-            if not _ignore_error(e):
+            if not ignore_error(e):
                 raise
             return False
         except ValueError:
@@ -431,11 +440,11 @@ class Path(ReadOnly):
 
     @property
     def isdir(self) -> bool:
-        return testpath(S_ISDIR, self)
+        return testpath(s_isdir, self)
 
     @property
     def isfile(self) -> bool:
-        return testpath(S_ISREG, self)
+        return testpath(s_isreg, self)
 
     @property
     def islink(self) -> bool:
@@ -447,15 +456,15 @@ class Path(ReadOnly):
 
     @property
     def is_block_device(self) -> bool:
-        return testpath(S_ISBLK, self)
+        return testpath(s_isblk, self)
 
     @property
     def is_char_device(self) -> bool:
-        return testpath(S_ISCHR, self)
+        return testpath(s_ischr, self)
 
     @property
     def isfifo(self) -> bool:
-        return testpath(S_ISFIFO, self)
+        return testpath(s_isfifo, self)
 
     @property
     def readable(self) -> bool:
@@ -852,7 +861,7 @@ class File(Path):
 
     @property
     def contents(self) -> 'Content':
-        return Content(self.name)
+        return Content(self)
 
     @contents.setter
     def contents(self, content: ['Content', bytes]) -> None:
@@ -985,7 +994,7 @@ class Open(ReadOnly):
     def __init__(self, file: Union[File, PathLink], /):
         if not isinstance(file, (File, bytes, str)):
             raise ge.NotAFileError(
-                f'file can only be an instance of '
+                'file can only be an instance of '
                 f'"{__package__}.{File.__name__}" or a path link, '
                 f'not "{file.__class__.__name__}".'
             )
@@ -1058,14 +1067,14 @@ class Content(Open):
     def __bytes__(self) -> bytes:
         return self.rb().read()
 
-    def __ior__(self, content: Union['Content', bytes], /) -> 'Content':
-        if isinstance(content, Content):
-            if abspath(content.__path__) == abspath(self.__path__):
+    def __ior__(self, other: Union['Content', bytes], /) -> 'Content':
+        if isinstance(other, Content):
+            if abspath(other.__path__) == abspath(self.__path__):
                 raise ge.IsSameFileError(
                     'source and destination cannot be the same, '
                     f'path "{abspath(self.__path__)}".'
                 )
-            read, write = content.rb().read, self.wb().write
+            read, write = other.rb().read, self.wb().write
             while True:
                 content = read(__read_bufsize__)
                 if not content:
@@ -1073,37 +1082,46 @@ class Content(Open):
                 write(content)
         # Beware of original data loss due to write failures (the `content` type
         # error).
-        elif content.__class__ is bytes:
-            self.wb().write(content)
+        elif other.__class__ is bytes:
+            self.wb().write(other)
         else:
             raise TypeError(
                 'content type to be written can only be '
                 f'"{__package__}.{Content.__name__}" or "bytes", '
-                f'not "{content.__class__.__name__}".'
+                f'not "{other.__class__.__name__}".'
             )
         return self
 
-    def __iadd__(self, content: Union['Content', bytes], /) -> 'Content':
-        if isinstance(content, Content):
-            read, write = content.rb().read, self.ab().write
+    def __iadd__(self, other: Union['Content', bytes], /) -> 'Content':
+        if isinstance(other, Content):
+            read, write = other.rb().read, self.ab().write
             while True:
                 content = read(__read_bufsize__)
                 if not content:
                     break
                 write(content)
-        elif content.__class__ is bytes:
-            self.ab().write(content)
+        elif other.__class__ is bytes:
+            self.ab().write(other)
         else:
             raise TypeError(
                 'content type to be appended can only be '
                 f'"{__package__}.{Content.__name__}" or "bytes", '
-                f'not "{content.__class__.__name__}".'
+                f'not "{other.__class__.__name__}".'
             )
         return self
 
-    def __eq__(self, content: Union['Content', bytes], /) -> bool:
-        if isinstance(content, Content):
-            read1, read2 = self.rb().read, content.rb().read
+    def __eq__(self, other: Union['Content', bytes], /) -> bool:
+        if self is other:
+            return True
+
+        if isinstance(other, Content):
+            if isinstance(self.file, File) or isinstance(other.file, File):
+                if self.file == other.file:
+                    return True
+            elif abspath(self.file) == abspath(other.file):
+                return True
+
+            read1, read2 = self.rb().read, other.rb().read
             while True:
                 content1 = read1(__read_bufsize__)
                 content2 = read2(__read_bufsize__)
@@ -1111,23 +1129,24 @@ class Content(Open):
                     return True
                 if content1 != content2:
                     return False
-        elif content.__class__ is bytes:
+
+        elif other.__class__ is bytes:
             start, end = 0, __read_bufsize__
             read1 = self.rb().read
             while True:
                 content1 = read1(__read_bufsize__)
-                if content1 == content[start:end] == b'':
+                if content1 == other[start:end] == b'':
                     return True
-                if content1 != content[start:end]:
+                if content1 != other[start:end]:
                     return False
                 start += __read_bufsize__
                 end   += __read_bufsize__
-        else:
-            raise TypeError(
-                'content type to be equality judgment operation can only be '
-                f'"{__package__}.{Content.__name__}" or "bytes", '
-                f'not "{content.__class__.__name__}".'
-            )
+
+        raise TypeError(
+            'content type to be equality judgment operation can only be '
+            f'"{__package__}.{Content.__name__}" or "bytes", '
+            f'not "{other.__class__.__name__}".'
+        )
 
     def __iter__(self) -> Generator:
         return (line.rstrip(b'\r\n') for line in self.rb())

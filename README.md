@@ -2,7 +2,7 @@
 [![Release](https://img.shields.io/github/release/gqylpy/systempath.svg?style=flat-square")](https://github.com/gqylpy/systempath/releases/latest)
 [![Python Versions](https://img.shields.io/pypi/pyversions/systempath)](https://pypi.org/project/systempath)
 [![License](https://img.shields.io/pypi/l/systempath)](https://github.com/gqylpy/systempath/blob/master/LICENSE)
-[![Downloads](https://pepy.tech/badge/systempath/month)](https://pepy.tech/project/systempath)
+[![Downloads](https://pepy.tech/badge/systempath)](https://pepy.tech/project/systempath)
 
 # systempath
 
