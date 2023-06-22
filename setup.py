@@ -1,19 +1,20 @@
-import re
 import setuptools
 import pkg_resources
 import systempath as i
 
 from systempath import File
 
-version, author, email, source = re.search(
-    ' {4}@version: ([1-9]\d*\.\d+(?:\.(?:alpha|beta)?\d+)?)\n'
-    ' {4}@author: ([\u4e00-\u9fa5]{2,4}|[A-Z][a-z]+(?: [A-Z][a-z]+)?) (<.+?>)\n'
-    ' {4}@source: (https?://.+)',
-    i.__doc__,
-).groups()
+gdoc: list = i.__doc__.split('\n')
+
+for index, line in enumerate(gdoc):
+    if line.startswith('@version: ', 4):
+        version = line.split()[-1]
+        break
+_, author, email = gdoc[index + 1].split()
+source = gdoc[index + 2].split()[-1]
 
 requires = [str(x) for x in pkg_resources.parse_requirements(
-    open('requirements.txt', encoding='utf8')
+    File('requirements.txt').open.r(encoding='utf8')
 )]
 
 setuptools.setup(
@@ -48,6 +49,7 @@ setuptools.setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11'
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12'
     ]
 )

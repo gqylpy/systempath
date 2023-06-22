@@ -63,8 +63,6 @@ from os.path import (
 
 from shutil import move, copyfile, copytree, copystat, copymode, copy2, rmtree
 
-from pathlib import _ignore_error as ignore_error
-
 from stat import (
     S_ISDIR  as s_isdir,
     S_ISREG  as s_isreg,
@@ -256,6 +254,14 @@ def joinpath(func: Callable) -> Closure:
     return core
 
 
+def ignore_error(e) -> bool:
+    return (
+        getattr(e, 'errno', None) in (2, 20, 9, 10062)
+                              or
+        getattr(e, 'winerror', None) in (21, 123, 1921)
+    )
+
+
 def testpath(testfunc: Callable[[int], bool], path: 'Path') -> bool:
     try:
         return testfunc(path.stat.st_mode)
@@ -335,6 +341,9 @@ class Path(ReadOnly):
             self.__class__ in (Path, SystemPath),
             other_type     in (Path, SystemPath)
         )) and abspath(self.name) == other_path and self.dir_fd == other_dir_fd
+
+    def __bool__(self) -> bool:
+        return self.exists
 
     @property
     def basename(self) -> BytesOrStr:
@@ -429,7 +438,7 @@ class Path(ReadOnly):
     @property
     def lexists(self) -> bool:
         try:
-            stat(self.name, dir_fd=self.dir_fd, follow_symlinks=False)
+            self.lstat
         except OSError as e:
             if not ignore_error(e):
                 raise
@@ -699,12 +708,10 @@ class Directory(Path):
                 return File(name)
             if exists(name):
                 return Path(name)
-            else:
-                raise ge.SystemPathNotFoundError(
-                    f'system path {repr(name)} does not exist.'
-                )
-        else:
-            return SystemPath(name)
+            raise ge.SystemPathNotFoundError(
+                f'system path {repr(name)} does not exist.'
+            )
+        return SystemPath(name)
 
     @joinpath
     def __delitem__(self, path: PathLink) -> None:
@@ -715,6 +722,9 @@ class Directory(Path):
             path: PathLink = join(self.name, name)
             yield Directory(path) if isdir(path) else \
                 File(path) if isfile(path) else Path(path)
+
+    def __bool__(self) -> bool:
+        return self.isdir
 
     @staticmethod
     def home(
@@ -738,7 +748,7 @@ class Directory(Path):
     def tree(
             self,
             *,
-            level:      int  = sys.getrecursionlimit(),
+            level:      int  = None,
             bottom_up:  bool = False,
             omit_dir:   bool = False,
             mysophobia: bool = False,
@@ -835,6 +845,9 @@ class File(Path):
             raise ge.NotAFileError(f'system path {repr(name)} is not a file.')
 
         return instance
+
+    def __bool__(self) -> bool:
+        return self.isfile
 
     @property
     def open(self) -> 'Open':

@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.10
+    @version: 1.0.11
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -130,6 +130,9 @@ class Path:
 
     def __ne__(self, other: ['Path', PathLink], /) -> bool:
         return not self.__eq__(other)
+
+    def __bool__(self) -> bool:
+        return self.exists
 
     @property
     def basename(self) -> BytesOrStr:
@@ -755,16 +758,18 @@ class Directory(Path):
                 return File(path)
             if os.path.exists(name):
                 return Path(name)
-            else:
-                raise SystemPathNotFoundError
-        else:
-            return SystemPath(path)
+            raise SystemPathNotFoundError
+
+        return SystemPath(path)
 
     def __delitem__(self, name: BytesOrStr) -> None:
         Path(os.path.join(self.name, name)).delete()
 
     def __iter__(self) -> Generator:
         return self.subpaths
+
+    def __bool__(self) -> bool:
+        return self.isdir
 
     @staticmethod
     def home(
@@ -991,6 +996,9 @@ class Directory(Path):
 class File(Path):
     """Pass a file path link to get a file object, which you can then use to do
     anything a file can do."""
+
+    def __bool__(self) -> bool:
+        return self.isfile
 
     @property
     def open(self) -> 'Open':
