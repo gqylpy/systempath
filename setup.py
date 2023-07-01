@@ -1,21 +1,16 @@
 import setuptools
-import pkg_resources
 import systempath as i
 
-from systempath import File
+from systempath import Content
 
-gdoc: list = i.__doc__.split('\n')
+idoc: list = i.__doc__.split('\n')
 
-for index, line in enumerate(gdoc):
+for index, line in enumerate(idoc):
     if line.startswith('@version: ', 4):
         version = line.split()[-1]
         break
-_, author, email = gdoc[index + 1].split()
-source = gdoc[index + 2].split()[-1]
-
-requires = [str(x) for x in pkg_resources.parse_requirements(
-    File('requirements.txt').open.r(encoding='utf8')
-)]
+_, author, email = idoc[index + 1].split()
+source = idoc[index + 2].split()[-1]
 
 setuptools.setup(
     name=i.__name__,
@@ -30,7 +25,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     packages=[i.__name__],
     python_requires='>=3.8, <4',
-    install_requires=requires,
+    install_requires=[x.decode() for x in Content('requirements.txt') if x],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',

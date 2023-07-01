@@ -476,6 +476,19 @@ class Path(ReadOnly):
         return testpath(s_isfifo, self)
 
     @property
+    def isempty(self) -> bool:
+        if self.isdir:
+            return not bool(listdir(self.name))
+        if self.isfile:
+            return not bool(getsize(self.name))
+        if self.exists:
+            raise ge.NotADirectoryOrFileError(repr(self.name))
+
+        raise ge.SystemPathNotFoundError(
+            f'system path {repr(self.name)} does not exist.'
+        )
+
+    @property
     def readable(self) -> bool:
         return access(
             self.name, 4,
@@ -830,6 +843,10 @@ class Directory(Path):
     ) -> None:
         rmtree(self.name, ignore_errors=ignore_errors, onerror=onerror)
 
+    @property
+    def isempty(self) -> bool:
+        return not bool(listdir(self.name))
+
     def chdir(self) -> None:
         chdir(self.name)
 
@@ -918,6 +935,10 @@ class File(Path):
             dst_dir_fd     =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
+
+    @property
+    def isempty(self) -> bool:
+        return not bool(getsize(self.name))
 
     def truncate(self, length: int) -> None:
         truncate(self.name, length)
@@ -1303,7 +1324,6 @@ def __tree__(
 
 
 class SystemPath(Directory, File):
-    __new__ = Directory.__new__
 
     def __init__(
             self,
@@ -1322,3 +1342,7 @@ class SystemPath(Directory, File):
             dir_fd         =dir_fd,
             follow_symlinks=follow_symlinks
         )
+
+    __bool__ = Path.__bool__
+
+    isempty = Path.isempty

@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.11
+    @version: 1.0.12
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -39,16 +39,23 @@ limitations under the License.
 """
 import os
 import sys
+import gqylpy_exception as ge
 
 from typing import (
-    TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO, Callable,
-    Generator, Iterator
+    Type, TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO,
+    Callable, Generator, Iterator
 )
+
+__all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
 
 BytesOrStr = TypeVar('BytesOrStr', bytes, str)
 PathLink   = BytesOrStr
 
-__all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
+SystemPathNotFoundError:  Type[ge.GqylpyError] = ge.SystemPathNotFoundError
+NotAPathError:            Type[ge.GqylpyError] = ge.NotAPathError
+NotAFileError:            Type[ge.GqylpyError] = ge.NotAFileError
+NotADirectoryOrFileError: Type[ge.GqylpyError] = ge.NotADirectoryOrFileError
+IsSameFileError:          Type[ge.GqylpyError] = ge.IsSameFileError
 
 
 class Path:
@@ -247,6 +254,12 @@ class Path:
     @property
     def isfifo(self) -> bool:
         """Return True if the path is a FIFO else False."""
+
+    @property
+    def isempty(self) -> bool:
+        """Return True if the directory (or the contents of the file) is empty
+        else False. If the `self.name` is not a directory or file then raise
+        `NotADirectoryOrFileError`."""
 
     @property
     def readable(self) -> bool:
