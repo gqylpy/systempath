@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.12
+    @version: 1.0.13
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -43,7 +43,7 @@ import gqylpy_exception as ge
 
 from typing import (
     Type, TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO,
-    Callable, Generator, Iterator
+    Callable, Iterator
 )
 
 __all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
@@ -778,7 +778,7 @@ class Directory(Path):
     def __delitem__(self, name: BytesOrStr) -> None:
         Path(os.path.join(self.name, name)).delete()
 
-    def __iter__(self) -> Generator:
+    def __iter__(self) -> Iterator[Union['Directory', 'File', Path]]:
         return self.subpaths
 
     def __bool__(self) -> bool:
@@ -795,7 +795,7 @@ class Directory(Path):
         ).expanduser()
 
     @property
-    def subpaths(self) -> Generator:
+    def subpaths(self) -> Iterator[Union['Directory', 'File', Path]]:
         """Get the instances of `Directory` or `File` for all subpaths (single
         layer) in the directory."""
 
@@ -811,19 +811,19 @@ class Directory(Path):
     def tree(
             self,
             *,
-            level:      Optional[int]  = None,
-            bottom_up:  Optional[bool] = None,
-            omit_dir:   Optional[bool] = None,
-            mysophobia: Optional[bool] = None,
-            shortpath:  Optional[bool] = None
-    ) -> Generator:
+            level:     Optional[int]  = None,
+            downtop:   Optional[bool] = None,
+            omit_dir:  Optional[bool] = None,
+            pure_path: Optional[bool] = None,
+            shortpath: Optional[bool] = None
+    ) -> Iterator[Union[Path, PathLink]]:
         return tree(
             self.name,
-            level     =level,
-            bottom_up =bottom_up,
-            omit_dir  =omit_dir,
-            mysophobia=mysophobia,
-            shortpath =shortpath
+            level    =level,
+            downtop  =downtop,
+            omit_dir =omit_dir,
+            pure_path=pure_path,
+            shortpath=shortpath
         )
 
     def walk(
@@ -1473,7 +1473,10 @@ class Content:
     def __ne__(self, other: Union['Content', bytes], /) -> bool:
         return not self.__eq__(other)
 
-    def __iter__(self) -> Generator:
+    def __contains__(self, subcontent: bytes, /) -> bool:
+        return self.contains(subcontent)
+
+    def __iter__(self) -> Iterator[bytes]:
         """Iterate over the file by line, omitting newline symbol and ignoring
         the last blank line."""
 
@@ -1493,6 +1496,10 @@ class Content:
     def append(self, content: Union['Content', bytes], /) -> None:
         """Append the another file contents (or a bytes object) to the current
         file."""
+
+    def contains(self, subcontent: bytes, /) -> bool:
+        """Return True if the current file content contain `subcontent` else
+        False."""
 
     def copy(
             self,
@@ -1521,14 +1528,14 @@ class Content:
 
 
 def tree(
-        dirpath:    Optional[PathLink] = None,
+        dirpath:   Optional[PathLink] = None,
         /, *,
-        level:      Optional[int]      = None,
-        bottom_up:  Optional[bool]     = None,
-        omit_dir:   Optional[bool]     = None,
-        mysophobia: Optional[bool]     = None,
-        shortpath:  Optional[bool]     = None
-) -> Generator:
+        level:     Optional[int]      = None,
+        downtop:   Optional[bool]     = None,
+        omit_dir:  Optional[bool]     = None,
+        pure_path: Optional[bool]     = None,
+        shortpath: Optional[bool]     = None
+) -> Iterator[Union[Path, PathLink]]:
     """
     Directory tree generator, recurse the directory to get all subdirectories
     and files.
@@ -1539,12 +1546,11 @@ def tree(
         return value of `os.getcwd()`).
 
     @param level
-        Recursion depth of the directory, default is maximum recursive depth
-        (the return value of `sys.getrecursionlimit()`). An int must be passed
-        in, any integer less than 1 is considered to be 1, warning passing
-        decimals can cause depth confusion.
+        Recursion depth of the directory, default is deepest. An int must be
+        passed in, any integer less than 1 is considered to be 1, warning
+        passing decimals can cause depth confusion.
 
-    @param bottom_up
+    @param downtop
         By default, the outer path is yielded first, from which the inner path
         is yielded. If your requirements are opposite, set this parameter to
         True.
@@ -1552,7 +1558,7 @@ def tree(
     @param omit_dir
         Omit all subdirectories when yielding paths. Default False.
 
-    @param mysophobia
+    @param pure_path
         By default, if the subpath is a directory then yield a `Directory`
         object, if the subpath is a file then yield a `File` object. If set this
         parameter to True, directly yield the path link string (or bytes). This
@@ -1560,7 +1566,7 @@ def tree(
 
     @param shortpath
         Yield short path link string, delete the `dirpath` from the left end of
-        the path, used with the parameter `mysophobia`. Default False.
+        the path, used with the parameter `pure_path`. Default False.
     """
 
 

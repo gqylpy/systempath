@@ -81,7 +81,7 @@ from hashlib import md5
 
 from typing import (
     TypeVar, Type, Literal, Optional, Union, Tuple, List, Final, Callable,
-    Generator, Iterator, Iterable, NoReturn, Any
+    Iterator, Iterable, NoReturn, Any
 )
 
 import gqylpy_exception as ge
@@ -110,19 +110,21 @@ __unique__: Final = object()
 
 
 class MasqueradeClass(type):
-    # Masquerade one class as another.
-    # Warning, masquerade the class can cause unexpected problems, use caution.
-    __module__ = 'builtins'
+    """
+    Masquerade one class as another (default masquerade as first parent class).
+    Warning, masquerade the class can cause unexpected problems, use caution.
+    """
+    __module__ = builtins.__name__
+
+    __qualname__ = type.__qualname__
+    # Warning, masquerade (modify) this attribute will cannot create the
+    # portable serialized representation. In practice, however, this metaclass
+    # often does not need to be serialized, so we try to ignore it.
 
     def __new__(mcs, __name__: str, __bases__: tuple, __dict__: dict):
-        try:
-            __masquerade_class__ = __dict__['__masquerade_class__']
-        except KeyError:
-            raise AttributeError(
-                f'instance of "{mcs.__name__}" must '
-                'define "__masquerade_class__" attribute, '
-                'use to specify the class to disguise.'
-            ) from None
+        __masquerade_class__: Type[object] = __dict__.setdefault(
+            '__masquerade_class__', __bases__[0] if __bases__ else object
+        )
 
         if not isinstance(__masquerade_class__, type):
             raise TypeError('"__masquerade_class__" is not a class.')
@@ -131,30 +133,30 @@ class MasqueradeClass(type):
             mcs, __masquerade_class__.__name__, __bases__, __dict__
         )
 
-        mcs.__name__     = type.__name__
-        mcs.__qualname__ = type.__qualname__
+        if cls.__module__ != __masquerade_class__.__module__:
+            setattr(sys.modules[__masquerade_class__.__module__], __name__, cls)
+
         cls.__module__   = __masquerade_class__.__module__
         cls.__qualname__ = __masquerade_class__.__qualname__
 
-        if getattr(builtins, __masquerade_class__.__name__, None) is \
-                __masquerade_class__:
-            setattr(builtins, __name__, cls)
-
         return cls
 
-    def __hash__(cls):
+    def __hash__(cls) -> int:
         return hash(cls.__masquerade_class__)
 
-    def __eq__(cls, o):
+    def __eq__(cls, o) -> bool:
         return True if o is cls.__masquerade_class__ else type.__eq__(cls, o)
+
+
+MasqueradeClass.__name__ = type.__name__
+builtins.MasqueradeClass = MasqueradeClass
 
 
 class ReadOnlyMode(type, metaclass=MasqueradeClass):
     # Disallow modifying the attributes of the classes externally.
-    __masquerade_class__ = type
 
     def __setattr__(cls, name: str, value: Any) -> None:
-        if sys._getframe().f_back.f_globals['__package__'] != __package__:
+        if sys._getframe(1).f_globals['__package__'] != __package__:
             raise ge.SetAttributeError(
                 f'cannot set "{name}" attribute '
                 f'of immutable type "{cls.__name__}".'
@@ -170,6 +172,8 @@ class ReadOnlyMode(type, metaclass=MasqueradeClass):
 
 class ReadOnly(metaclass=ReadOnlyMode):
     # Disallow modifying the attributes of the instances externally.
+    __module__   = builtins.__name__
+    __qualname__ = object.__name__
 
     # __dict__ = {}
     # Tamper with attribute `__dict__` to avoid modifying its subclass instance
@@ -178,7 +182,7 @@ class ReadOnly(metaclass=ReadOnlyMode):
     # moment, the solution is still in the works.
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if sys._getframe().f_back.f_globals['__name__'] != __name__ and not \
+        if sys._getframe(1).f_globals['__name__'] != __name__ and not \
                 (isinstance(self, File) and name in ('content', 'contents')):
             raise ge.SetAttributeError(
                 f'cannot set "{name}" attribute in instance '
@@ -193,6 +197,10 @@ class ReadOnly(metaclass=ReadOnlyMode):
                 f'of immutable type "{self.__class__.__name__}".'
             )
         object.__delattr__(self, name)
+
+
+ReadOnly.__name__ = object.__name__
+builtins.ReadOnly = ReadOnly
 
 
 def dst2abs(func: Callable) -> Closure:
@@ -730,7 +738,7 @@ class Directory(Path):
     def __delitem__(self, path: PathLink) -> None:
         Path(path).delete()
 
-    def __iter__(self) -> Generator:
+    def __iter__(self) -> Iterator[Union['Directory', 'File', Path]]:
         for name in listdir(self.name):
             path: PathLink = join(self.name, name)
             yield Directory(path) if isdir(path) else \
@@ -748,7 +756,7 @@ class Directory(Path):
         )
 
     @property
-    def subpaths(self) -> Generator:
+    def subpaths(self) -> Iterator[Union['Directory', 'File', Path]]:
         return self.__iter__()
 
     @property
@@ -761,17 +769,21 @@ class Directory(Path):
     def tree(
             self,
             *,
-            level:      int  = None,
-            bottom_up:  bool = False,
-            omit_dir:   bool = False,
-            mysophobia: bool = False,
-            shortpath:  bool = False
-    ) -> Generator:
+            level:      int            = float('inf'),
+            downtop:    Optional[bool] = None,
+            bottom_up:  bool           = __unique__,
+            omit_dir:   bool           = False,
+            pure_path:  Optional[bool] = None,
+            mysophobia: bool           = __unique__,
+            shortpath:  bool           = False
+    ) -> Iterator[Union[Path, PathLink]]:
         return tree(
             self.name,
             level     =level,
+            downtop   =downtop,
             bottom_up =bottom_up,
             omit_dir  =omit_dir,
+            pure_path =pure_path,
             mysophobia=mysophobia,
             shortpath =shortpath
         )
@@ -1182,7 +1194,24 @@ class Content(Open):
             f'not "{other.__class__.__name__}".'
         )
 
-    def __iter__(self) -> Generator:
+    def __contains__(self, subcontent: bytes, /) -> bool:
+        if subcontent == b'':
+            return True
+
+        deviation_index = -len(subcontent) + 1
+        deviation_value = b''
+
+        read = self.rb().read
+
+        while True:
+            content = read(__read_bufsize__)
+            if not content:
+                return False
+            if subcontent in deviation_value + content:
+                return True
+            deviation_value = content[deviation_index:]
+
+    def __iter__(self) -> Iterator[bytes]:
         return (line.rstrip(b'\r\n') for line in self.rb())
 
     def __len__(self) -> int:
@@ -1199,6 +1228,9 @@ class Content(Open):
 
     def append(self, content: Union['Content', bytes], /) -> None:
         self.__iadd__(content)
+
+    def contains(self, subcontent: bytes, /) -> bool:
+        return self.__contains__(subcontent)
 
     def copy(
             self,
@@ -1234,93 +1266,99 @@ class Content(Open):
         return m5.hexdigest()
 
 
-def tree(
-        dirpath:    Optional[PathLink] = None,
-        /, *,
-        level:      int                = None,
-        bottom_up:  bool               = False,
-        omit_dir:   bool               = False,
-        mysophobia: bool               = False,
-        shortpath:  bool               = False
-) -> Generator:
-    if dirpath == b'':
-        dirpath: bytes = getcwdb()
-    elif dirpath in (None, ''):
-        dirpath: str = getcwd()
+class tree:
 
-    return __tree__(
-        dirpath,
-        level     =level or sys.getrecursionlimit(),
-        bottom_up =bottom_up,
-        omit_dir  =omit_dir,
-        root      =dirpath,
-        nullchar  =b'' if dirpath.__class__ is bytes else '',
-        mysophobia=mysophobia,
-        shortpath =shortpath
-    )
+    def __init__(
+            self,
+            dirpath:    Optional[PathLink] = None,
+            /, *,
+            level:      int                = float('inf'),
+            downtop:    Optional[bool]     = None,
+            bottom_up:  bool               = __unique__,
+            omit_dir:   bool               = False,
+            pure_path:  Optional[bool]     = None,
+            mysophobia: bool               = __unique__,
+            shortpath:  bool               = False
+    ):
+        if dirpath == b'':
+            dirpath: bytes = getcwdb()
+        elif dirpath in (None, ''):
+            dirpath: str = getcwd()
 
+        self.root = dirpath
 
-def __tree__(
-        dirpath:    PathLink,
-        /, *,
-        level:      int,
-        bottom_up:  bool,
-        omit_dir:   bool,
-        mysophobia: bool,
-        shortpath:  bool,
-        root:       PathLink,
-        nullchar:   BytesOrStr
-) -> Generator:
-    for name in listdir(dirpath):
-        path: PathLink = join(dirpath, name)
-        is_dir: bool = isdir(path)
+        if bottom_up is not __unique__:
+            warnings.warn(
+                'parameter "bottom_up" will be deprecated soon, replaced to '
+                '"downtop".', stacklevel=2
+            )
+            if downtop is None:
+                downtop = bottom_up
 
-        if bottom_up:
+        self.tree = (self.downtop if downtop else self.topdown)\
+            (dirpath, level=level)
+
+        self.omit_dir = omit_dir
+
+        if mysophobia is not __unique__:
+            warnings.warn(
+                'parameter "mysophobia" will be deprecated soon, replaced to '
+                '"pure_path".', stacklevel=2
+            )
+            if pure_path is None:
+                pure_path = mysophobia
+
+        self.pure_path = pure_path
+        self.shortpath = shortpath
+
+        if self.pure_path and shortpath:
+            self.nullchar = b'' if dirpath.__class__ is bytes else ''
+
+    def __iter__(self) -> Iterator[Union[Path, PathLink]]:
+        return self
+
+    def __next__(self) -> Union[Path, PathLink]:
+        return next(self.tree)
+
+    def topdown(
+            self, dirpath: PathLink, /, *, level: int
+    ) -> Iterator[Union[Path, PathLink]]:
+        for name in listdir(dirpath):
+            path: PathLink = join(dirpath, name)
+            is_dir: bool = isdir(path)
+            if not is_dir or not self.omit_dir:
+                yield self.path(path, is_dir=is_dir)
             if level > 1 and is_dir:
-                yield from __tree__(
-                    path,
-                    level     =level - 1,
-                    bottom_up =bottom_up,
-                    omit_dir  =omit_dir,
-                    mysophobia=mysophobia,
-                    shortpath =shortpath,
-                    root      =root,
-                    nullchar  =nullchar
-                )
-            if not is_dir or not omit_dir:
-                if mysophobia:
-                    if shortpath:
-                        path: PathLink = path.replace(root, nullchar)
-                        if path[0] in (47, 92, '/', '\\'):
-                            path: PathLink = path[1:]
-                    yield path
-                else:
-                    yield Directory(path) if is_dir else \
-                        File(path) if isfile(path) else Path(path)
+                yield from self.topdown(path, level=level - 1)
+
+    def downtop(
+            self, dirpath: PathLink, /, *, level: int
+    ) -> Iterator[Union[Path, PathLink]]:
+        for name in listdir(dirpath):
+            path: PathLink = join(dirpath, name)
+            is_dir: bool = isdir(path)
+            if level > 1 and is_dir:
+                yield from self.downtop(path, level=level - 1)
+            if not is_dir or not self.omit_dir:
+                yield self.path(path, is_dir=is_dir)
+
+    def path(
+            self, path: PathLink, /, *, is_dir: bool
+    ) -> Union[Path, PathLink]:
+        if self.pure_path:
+            return self.basepath(path) if self.shortpath else path
+        elif is_dir:
+            return Directory(path)
+        elif isfile(path):
+            return File(path)
         else:
-            if not is_dir or not omit_dir:
-                if mysophobia:
-                    if not shortpath:
-                        yield path
-                    else:
-                        shortpath: PathLink = path.replace(root, nullchar)
-                        if shortpath[0] in (47, 92, '/', '\\'):
-                            shortpath: PathLink = shortpath[1:]
-                        yield shortpath
-                else:
-                    yield Directory(path) if is_dir else \
-                        File(path) if isfile(path) else Path(path)
-            if level > 1 and is_dir:
-                yield from __tree__(
-                    path,
-                    level     =level - 1,
-                    bottom_up =bottom_up,
-                    omit_dir  =omit_dir,
-                    mysophobia=mysophobia,
-                    shortpath =shortpath,
-                    root      =root,
-                    nullchar  =nullchar
-                )
+            return Path(path)
+
+    def basepath(self, path: PathLink, /) -> PathLink:
+        path: PathLink = path.replace(self.root, self.nullchar)
+        if path[0] in (47, 92, '/', '\\'):
+            path: PathLink = path[1:]
+        return path
 
 
 class SystemPath(Directory, File):
