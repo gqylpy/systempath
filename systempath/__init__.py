@@ -18,12 +18,12 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.13
+    @version: 1.0.14
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
 ────────────────────────────────────────────────────────────────────────────────
-Copyright (c) 2022, 2023 GQYLPY <http://gqylpy.com>. All rights reserved.
+Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -571,8 +571,8 @@ class Path:
 
         def chflags(self, flags: int) -> None:
             """"
-            Set the flag for the file or directory, different flag have different
-            attributes. Call `os.chflags` internally.
+            Set the flag for the file or directory, different flag have
+            different attributes. Call `os.chflags` internally.
 
             @param flags
                 Specify numeric flag, can be the inclusive-or(`|`) of:
@@ -1592,12 +1592,9 @@ class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
     gcode = __import__(gpath, fromlist=...)
 
     for gname in gpack:
-        try:
-            assert gname[0] != '_'
-            gfunc = getattr(gcode, gname)
-            assert gfunc.__module__ == gpath
-        except (AssertionError, AttributeError):
-            continue
-        gfunc.__module__ = __package__
-        gfunc.__doc__ = gpack[gname].__doc__
-        gpack[gname] = gfunc
+        if gname[0] != '_':
+            gfunc = getattr(gcode, gname, None)
+            if gfunc and getattr(gfunc, '__module__', None) == gpath:
+                gfunc.__module__ = __package__
+                gfunc.__doc__ = gpack[gname].__doc__
+                gpack[gname] = gfunc
