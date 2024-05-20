@@ -1,5 +1,5 @@
 """
-Copyright (c) 2022, 2023 GQYLPY <http://gqylpy.com>. All rights reserved.
+Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@ import sys
 import builtins
 import warnings
 import functools
+
+from copy import copy, deepcopy
 
 from os import (
     stat,    lstat,   stat_result,
@@ -54,11 +56,11 @@ else:
     __read_bufsize__ = 1024 * 1024
 
 from os.path import (
-    basename, dirname,    abspath,  realpath,   relpath,
+    basename, dirname,    abspath,    realpath,   relpath,
     normpath, expanduser, expandvars,
-    join,     split,      splitext, splitdrive,
-    isabs,    exists,     isdir,    isfile,     islink,  ismount,
-    getctime, getmtime,   getatime, getsize
+    join,     split,      splitext,   splitdrive,
+    isabs,    exists,     isdir,      isfile,     islink,  ismount,
+    getctime, getmtime,   getatime,   getsize
 )
 
 from shutil import move, copyfile, copytree, copystat, copymode, copy2, rmtree
@@ -142,10 +144,18 @@ class MasqueradeClass(type):
         return cls
 
     def __hash__(cls) -> int:
+        if sys._getframe(1).f_code in (deepcopy.__code__, copy.__code__):
+            return type.__hash__(cls)
         return hash(cls.__masquerade_class__)
 
     def __eq__(cls, o) -> bool:
         return True if o is cls.__masquerade_class__ else type.__eq__(cls, o)
+
+    def __init_subclass__(mcs) -> None:
+        setattr(builtins, mcs.__name__, mcs)
+        mcs.__name__     = MasqueradeClass.__name__
+        mcs.__qualname__ = MasqueradeClass.__qualname__
+        mcs.__module__   = MasqueradeClass.__module__
 
 
 MasqueradeClass.__name__ = type.__name__
@@ -708,7 +718,9 @@ class Path(ReadOnly):
 
 class Directory(Path):
 
-    def __new__(cls, name: PathLink = '.', /, strict: bool = False, **kw):
+    def __new__(
+            cls, name: PathLink = '.', /, strict: bool = False, **kw
+    ) -> 'Directory':
         instance = Path.__new__(cls, name, strict=strict, **kw)
 
         if strict and not isdir(name):
@@ -1295,8 +1307,9 @@ class tree:
             if downtop is None:
                 downtop = bottom_up
 
-        self.tree = (self.downtop if downtop else self.topdown)\
-            (dirpath, level=level)
+        self.tree = (
+            self.downtop if downtop else self.topdown
+        )(dirpath, level=level)
 
         self.omit_dir = omit_dir
 
