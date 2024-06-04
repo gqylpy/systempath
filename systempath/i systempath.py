@@ -86,19 +86,34 @@ from typing import (
     Iterator, Iterable, NoReturn, Any
 )
 
+if sys.version_info >= (3, 9):
+    from typing import Annotated
+else:
+    class Annotated(metaclass=type('', (type,), {
+        '__new__': lambda *a: type.__new__(*a)()
+    })):
+        def __getitem__(self, *a): ...
+
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    TypeAlias = TypeVar("TypeAlias")
+
 import gqylpy_exception as ge
 
-PathLink = BytesOrStr = Union[bytes, str]
-Closure = TypeVar('Closure', bound=Callable)
+BytesOrStr: TypeAlias = Union[bytes, str]
+PathLink:   TypeAlias = BytesOrStr
+PathType:   TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
+Closure:    TypeAlias = TypeVar('Closure', bound=Callable)
 
-OpenMode = Literal[
+OpenMode: TypeAlias = Annotated[Literal[
     'rb', 'rb_plus', 'rt', 'rt_plus', 'r', 'r_plus',
     'wb', 'wb_plus', 'wt', 'wt_plus', 'w', 'w_plus',
     'ab', 'ab_plus', 'at', 'at_plus', 'a', 'a_plus',
     'xb', 'xb_plus', 'xt', 'xt_plus', 'x', 'x_plus'
-]
+], 'The file open mode.']
 
-EncodingErrorHandlingMode = Literal[
+EncodingErrorHandlingMode: TypeAlias = Annotated[Literal[
     'strict',
     'ignore',
     'replace',
@@ -106,9 +121,9 @@ EncodingErrorHandlingMode = Literal[
     'xmlcharrefreplace',
     'backslashreplace',
     'namereplace'
-]
+], 'The error handling modes for encoding and decoding (strictness).']
 
-__unique__: Final = object()
+__unique__: Final[Annotated[object, 'A unique object.']] = object()
 
 
 class MasqueradeClass(type):
@@ -218,7 +233,7 @@ def dst2abs(func: Callable) -> Closure:
     # of the source is used as the parent path of the destination instead of
     # using the current working directory, different from the traditional way.
     @functools.wraps(func)
-    def core(path: 'Path', dst: PathLink) -> PathLink:
+    def core(path: PathType, dst: PathLink) -> PathLink:
         try:
             singlename: bool = basename(dst) == dst
         except TypeError:
@@ -228,25 +243,17 @@ def dst2abs(func: Callable) -> Closure:
             ) from None
         if singlename:
             try:
-                dst: PathLink = join(dirname(path.name), dst)
-            except TypeError:
-                dst: PathLink = join(dirname(
-                    path.name.decode() if dst.__class__ is str
-                    else path.name.encode()
-                ), dst)
+                dst: PathLink = join(dirname(path), dst)
+            except TypeError as e:
+                if dst.__class__ is bytes:
+                    name: bytes = path.name.encode()
+                elif dst.__class__ is str:
+                    name: str = path.name.decode()
+                else:
+                    raise e from None
+                dst: PathLink = join(dirname(name), dst)
         func(path, dst)
         path.name = dst
-        return dst
-    return core
-
-
-def dst2path(func: Callable) -> Closure:
-    # If the destination path is instance of `Path` then convert to path link.
-    @functools.wraps(func)
-    def core(
-            path: 'Path', dst: Union['Path', PathLink], **kw
-    ) -> Union['Path', PathLink]:
-        func(path, dst.name if isinstance(dst, path.__class__) else dst, **kw)
         return dst
     return core
 
@@ -256,9 +263,9 @@ def joinpath(func: Callable) -> Closure:
     # Compatible with Python earlier versions.
 
     @functools.wraps(func)
-    def core(path: 'Path', name: BytesOrStr, /) -> Any:
+    def core(path: PathType, name: BytesOrStr, /) -> Any:
         try:
-            name: PathLink = join(path.name, name)
+            name: PathLink = join(path, name)
         except TypeError:
             if name.__class__ is bytes:
                 name: str = name.decode()
@@ -266,7 +273,7 @@ def joinpath(func: Callable) -> Closure:
                 name: bytes = name.encode()
             else:
                 raise
-            name: PathLink = join(path.name, name)
+            name: PathLink = join(path, name)
         return func(path, name)
 
     return core
@@ -280,7 +287,7 @@ def ignore_error(e) -> bool:
     )
 
 
-def testpath(testfunc: Callable[[int], bool], path: 'Path') -> bool:
+def testpath(testfunc: Callable[[int], bool], path: PathType) -> bool:
     try:
         return testfunc(path.stat.st_mode)
     except OSError as e:
@@ -307,7 +314,7 @@ class Path(ReadOnly):
                 )
             if strict and not exists(name):
                 raise ge.SystemPathNotFoundError(
-                    f'system path {repr(name)} does not exist.'
+                    f'system path {name!r} does not exist.'
                 )
         return object.__new__(cls)
 
@@ -329,13 +336,12 @@ class Path(ReadOnly):
         return self.name if self.name.__class__ is str else repr(self.name)
 
     def __repr__(self) -> str:
-        return f'<{__package__}.{self.__class__.__name__} ' \
-               f'name={repr(self.name)}>'
+        return f'<{__package__}.{self.__class__.__name__} name={self.name!r}>'
 
     def __bytes__(self) -> bytes:
         return self.name if self.name.__class__ is bytes else self.name.encode()
 
-    def __eq__(self, other: ['Path', PathLink], /) -> bool:
+    def __eq__(self, other: [PathType, PathLink], /) -> bool:
         if self is other:
             return True
 
@@ -358,26 +364,91 @@ class Path(ReadOnly):
             self.__class__ == other_type,
             self.__class__ in (Path, SystemPath),
             other_type     in (Path, SystemPath)
-        )) and abspath(self.name) == other_path and self.dir_fd == other_dir_fd
+        )) and abspath(self) == other_path and self.dir_fd == other_dir_fd
 
     def __bool__(self) -> bool:
         return self.exists
 
+    def __fspath__(self) -> PathLink:
+        return self.name
+
+    def __truediv__(self, subpath: Union[PathType, PathLink], /) -> PathType:
+        if isinstance(subpath, Path):
+            subpath: PathLink = subpath.name
+        try:
+            joined_path: PathLink = join(self, subpath)
+        except TypeError:
+            if subpath.__class__ is bytes:
+                subpath: str = subpath.decode()
+            elif subpath.__class__ is str:
+                subpath: bytes = subpath.encode()
+            else:
+                raise ge.NotAPathError(
+                    'right path can only be an instance of '
+                    f'"{__package__}.{Path.__name__}" or a path link, '
+                    f'not "{subpath.__class__.__name__}".'
+                ) from None
+            joined_path: PathLink = join(self, subpath)
+
+        if self.strict:
+            if isfile(joined_path):
+                pathtype = File
+            elif isdir(joined_path):
+                pathtype = Directory
+            elif self.__class__ is Path:
+                pathtype = Path
+            else:
+                pathtype = SystemPath
+        elif self.__class__ is Path:
+            pathtype = Path
+        else:
+            pathtype = SystemPath
+
+        ins: PathType = pathtype(
+            joined_path,
+            dir_fd         =self.dir_fd,
+            follow_symlinks=self.follow_symlinks
+        )
+        ins.strict = self.strict
+        return ins
+
+    def __add__(self, subpath: Union[PathType, PathLink], /) -> PathType:
+        return self / subpath
+
+    def __rtruediv__(self, dirpath: PathLink, /) -> PathType:
+        try:
+            path: PathLink = join(dirpath, self)
+        except TypeError:
+            if dirpath.__class__ is bytes:
+                dirpath: str = dirpath.decode()
+            elif dirpath.__class__ is str:
+                dirpath: bytes = dirpath.encode()
+            else:
+                raise ge.NotAPathError(
+                    'left path type can only be "bytes" or "str", '
+                    f'not "{dirpath.__class__.__name__}".'
+                ) from None
+            path: PathLink = join(dirpath, self)
+        return self.__class__(path, follow_symlinks=self.follow_symlinks)
+
+    def __radd__(self, dirpath: PathLink, /) -> PathType:
+        return dirpath / self
+
     @property
     def basename(self) -> BytesOrStr:
-        return basename(self.name)
+        return basename(self)
 
     @property
     def dirname(self) -> 'Directory':
         return Directory(
-            dirname(self.name),
+            dirname(self),
             strict         =self.strict,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
 
     def dirnamel(self, level: int) -> 'Directory':
-        directory: PathLink = self.name
+        directory = self
         for _ in range(level):
             directory: PathLink = dirname(directory)
         return Directory(
@@ -388,58 +459,58 @@ class Path(ReadOnly):
         )
 
     @property
-    def abspath(self) -> 'Path':
+    def abspath(self) -> PathType:
         return self.__class__(
-            abspath(self.name),
+            abspath(self),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def realpath(self, *, strict: bool = False) -> 'Path':
+    def realpath(self, *, strict: bool = False) -> PathType:
         return self.__class__(
-            realpath(self.name, strict=strict),
+            realpath(self, strict=strict),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def relpath(self, start: Optional[PathLink] = None) -> 'Path':
+    def relpath(self, start: Optional[PathLink] = None) -> PathType:
         return self.__class__(
-            relpath(self.name, start=start),
+            relpath(self, start=start),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def normpath(self) -> 'Path':
+    def normpath(self) -> PathType:
         return self.__class__(
-            normpath(self.name),
+            normpath(self),
             strict         =self.strict,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
 
-    def expanduser(self) -> 'Path':
+    def expanduser(self) -> PathType:
         return self.__class__(
-            expanduser(self.name),
+            expanduser(self),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def expandvars(self) -> 'Path':
+    def expandvars(self) -> PathType:
         return self.__class__(
-            expandvars(self.name),
+            expandvars(self),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
     def split(self) -> Tuple[PathLink, BytesOrStr]:
-        return split(self.name)
+        return split(self)
 
     def splitdrive(self) -> Tuple[BytesOrStr, PathLink]:
-        return splitdrive(self.name)
+        return splitdrive(self)
 
     @property
     def isabs(self) -> bool:
-        return isabs(self.name)
+        return isabs(self)
 
     @property
     def exists(self) -> bool:
@@ -475,11 +546,11 @@ class Path(ReadOnly):
 
     @property
     def islink(self) -> bool:
-        return islink(self.name)
+        return islink(self)
 
     @property
     def ismount(self) -> bool:
-        return ismount(self.name)
+        return ismount(self)
 
     @property
     def is_block_device(self) -> bool:
@@ -496,20 +567,20 @@ class Path(ReadOnly):
     @property
     def isempty(self) -> bool:
         if self.isdir:
-            return not bool(listdir(self.name))
+            return not bool(listdir(self))
         if self.isfile:
-            return not bool(getsize(self.name))
+            return not bool(getsize(self))
         if self.exists:
             raise ge.NotADirectoryOrFileError(repr(self.name))
 
         raise ge.SystemPathNotFoundError(
-            f'system path {repr(self.name)} does not exist.'
+            f'system path {self.name!r} does not exist.'
         )
 
     @property
     def readable(self) -> bool:
         return access(
-            self.name, 4,
+            self, 4,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
@@ -517,7 +588,7 @@ class Path(ReadOnly):
     @property
     def writeable(self) -> bool:
         return access(
-            self.name, 2,
+            self, 2,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
@@ -525,7 +596,7 @@ class Path(ReadOnly):
     @property
     def executable(self) -> bool:
         return access(
-            self.name, 1,
+            self, 1,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
@@ -537,82 +608,76 @@ class Path(ReadOnly):
             onerror:       Optional[Callable] = None
     ) -> None:
         if self.isdir:
-            rmtree(self.name, ignore_errors=ignore_errors, onerror=onerror)
+            rmtree(self, ignore_errors=ignore_errors, onerror=onerror)
         else:
             try:
-                remove(self.name)
+                remove(self)
             except FileNotFoundError:
                 if not ignore_errors:
                     raise
 
     @dst2abs
     def rename(self, dst: PathLink, /) -> None:
-        rename(self.name, dst, src_dir_fd=self.dir_fd, dst_dir_fd=self.dir_fd)
+        rename(self, dst, src_dir_fd=self.dir_fd, dst_dir_fd=self.dir_fd)
 
     @dst2abs
     def renames(self, dst: PathLink, /) -> None:
-        renames(self.name, dst)
+        renames(self, dst)
 
     @dst2abs
     def replace(self, dst: PathLink, /) -> None:
-        replace(self.name, dst, src_dir_fd=self.dir_fd, dst_dir_fd=self.dir_fd)
+        replace(self, dst, src_dir_fd=self.dir_fd, dst_dir_fd=self.dir_fd)
 
-    @dst2path
     def move(
             self,
-            dst:           PathLink,
+            dst:           Union[PathType, PathLink],
             /, *,
             copy_function: Callable[[PathLink, PathLink], None] = copy2
     ) -> None:
-        move(self.name, dst, copy_function=copy_function)
+        move(self, dst, copy_function=copy_function)
 
-    @dst2path
-    def copystat(self, dst: PathLink, /) -> None:
-        copystat(self.name, dst, follow_symlinks=self.follow_symlinks)
+    def copystat(self, dst: Union[PathType, PathLink], /) -> None:
+        copystat(self, dst, follow_symlinks=self.follow_symlinks)
 
-    @dst2path
-    def copymode(self, dst: PathLink, /) -> None:
-        copymode(self.name, dst, follow_symlinks=self.follow_symlinks)
+    def copymode(self, dst: Union[PathType, PathLink], /) -> None:
+        copymode(self, dst, follow_symlinks=self.follow_symlinks)
 
-    @dst2path
-    def symlink(self, dst: PathLink, /) -> None:
-        symlink(self.name, dst, dir_fd=self.dir_fd)
+    def symlink(self, dst: Union[PathType, PathLink], /) -> None:
+        symlink(self, dst, dir_fd=self.dir_fd)
 
     def readlink(self) -> PathLink:
-        return readlink(self.name, dir_fd=self.dir_fd)
+        return readlink(self, dir_fd=self.dir_fd)
 
     @property
     def stat(self) -> stat_result:
         return stat(
-            self.name, dir_fd=self.dir_fd, follow_symlinks=self.follow_symlinks
+            self, dir_fd=self.dir_fd, follow_symlinks=self.follow_symlinks
         )
 
     @property
     def lstat(self) -> stat_result:
-        return lstat(self.name, dir_fd=self.dir_fd)
+        return lstat(self, dir_fd=self.dir_fd)
 
     def getsize(self) -> int:
-        return getsize(self.name)
+        return getsize(self)
 
     def getctime(self) -> float:
-        return getctime(self.name)
+        return getctime(self)
 
     def getmtime(self) -> float:
-        return getmtime(self.name)
+        return getmtime(self)
 
     def getatime(self) -> float:
-        return getatime(self.name)
+        return getatime(self)
 
     def chmod(self, mode: int, /) -> None:
         chmod(
-            self.name, mode,
-            dir_fd         =self.dir_fd,
-            follow_symlinks=self.follow_symlinks
+            self, mode, dir_fd=self.dir_fd, follow_symlinks=self.follow_symlinks
         )
 
     def access(self, mode: int, /, *, effective_ids: bool = False) -> bool:
         return access(
-            self.name, mode,
+            self, mode,
             dir_fd         =self.dir_fd,
             effective_ids  =effective_ids,
             follow_symlinks=self.follow_symlinks
@@ -620,7 +685,7 @@ class Path(ReadOnly):
 
     if sys.platform != 'win32':
         def lchmod(self, mode: int, /) -> None:
-            lchmod(self.name, mode)
+            lchmod(self, mode)
 
         @property
         def owner(self) -> str:
@@ -632,19 +697,19 @@ class Path(ReadOnly):
 
         def chown(self, uid: int, gid: int) -> None:
             return chown(
-                self.name, uid, gid,
+                self, uid, gid,
                 dir_fd         =self.dir_fd,
                 follow_symlinks=self.follow_symlinks
             )
 
         def lchown(self, uid: int, gid: int) -> None:
-            lchown(self.name, uid, gid)
+            lchown(self, uid, gid)
 
         def chflags(self, flags: int) -> None:
-            chflags(self.name, flags, follow_symlinks=self.follow_symlinks)
+            chflags(self, flags, follow_symlinks=self.follow_symlinks)
 
         def lchflags(self, flags: int) -> None:
-            lchflags(self.name, flags)
+            lchflags(self, flags)
 
         def chattr(self, operator: Literal['+', '-', '='], attrs: str) -> None:
             warnings.warn(
@@ -655,7 +720,9 @@ class Path(ReadOnly):
                 raise ge.ChattrError(
                     f'unsupported operation "{operator}", only "+", "-" or "=".'
                 )
-            c: str = f'chattr {operator}{attrs} {self.name}'
+            pathlink: str = self.name if self.name.__class__ is str \
+                else self.name.decode()
+            c: str = f'chattr {operator}{attrs} {pathlink}'
             if system(f'sudo {c} &>/dev/null'):
                 raise ge.ChattrError(c)
 
@@ -664,7 +731,9 @@ class Path(ReadOnly):
                 'implementation of method `lsattr` is to directly call the '
                 'system command `lsattr`, so this is very unreliable.'
             , stacklevel=2)
-            c: str = f'lsattr {self.name}'
+            pathlink: str = self.name if self.name.__class__ is str \
+                else self.name.decode()
+            c: str = f'lsattr {pathlink}'
             attrs: str = popen(
                 "sudo %s 2>/dev/null | awk '{print $1}'" % c
             ).read()[:-1]
@@ -678,8 +747,7 @@ class Path(ReadOnly):
         if sys.platform == 'linux':
             def getxattr(self, attribute: BytesOrStr, /) -> bytes:
                 return getxattr(
-                    self.name, attribute,
-                    follow_symlinks=self.follow_symlinks
+                    self, attribute, follow_symlinks=self.follow_symlinks
                 )
 
             def setxattr(
@@ -690,18 +758,18 @@ class Path(ReadOnly):
                     flags:     int        = 0
             ) -> None:
                 setxattr(
-                    self.name, attribute, value, flags,
+                    self, attribute, value, flags,
                     follow_symlinks=self.follow_symlinks
                 )
 
             def listxattr(self) -> List[str]:
                 return listxattr(
-                    self.name, follow_symlinks=self.follow_symlinks
+                    self, follow_symlinks=self.follow_symlinks
                 )
 
             def removexattr(self, attribute: BytesOrStr, /) -> None:
                 removexattr(
-                    self.name, attribute, follow_symlinks=self.follow_symlinks
+                    self, attribute, follow_symlinks=self.follow_symlinks
                 )
 
     def utime(
@@ -710,7 +778,7 @@ class Path(ReadOnly):
             times: Optional[Tuple[Union[int, float], Union[int, float]]] = None
     ) -> None:
         utime(
-            self.name, times,
+            self, times,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
@@ -725,15 +793,13 @@ class Directory(Path):
 
         if strict and not isdir(name):
             raise NotADirectoryError(
-                f'system path {repr(name)} is not a directory.'
+                f'system path {name!r} is not a directory.'
             )
 
         return instance
 
     @joinpath
-    def __getitem__(
-            self, name: PathLink
-    ) -> Union['SystemPath', 'Directory', 'File', Path]:
+    def __getitem__(self, name: PathLink) -> PathType:
         if self.strict:
             if isdir(name):
                 return Directory(name, strict=self.strict)
@@ -742,7 +808,7 @@ class Directory(Path):
             if exists(name):
                 return Path(name)
             raise ge.SystemPathNotFoundError(
-                f'system path {repr(name)} does not exist.'
+                f'system path {name!r} does not exist.'
             )
         return SystemPath(name)
 
@@ -751,8 +817,8 @@ class Directory(Path):
         Path(path).delete()
 
     def __iter__(self) -> Iterator[Union['Directory', 'File', Path]]:
-        for name in listdir(self.name):
-            path: PathLink = join(self.name, name)
+        for name in listdir(self):
+            path: PathLink = join(self, name)
             yield Directory(path) if isdir(path) else \
                 File(path) if isfile(path) else Path(path)
 
@@ -773,10 +839,10 @@ class Directory(Path):
 
     @property
     def subpath_names(self) -> List[BytesOrStr]:
-        return listdir(self.name)
+        return listdir(self)
 
     def scandir(self) -> Iterator:
-        return scandir(self.name)
+        return scandir(self)
 
     def tree(
             self,
@@ -804,13 +870,12 @@ class Directory(Path):
             self, *, topdown: bool = True, onerror: Optional[Callable] = None
     ) -> Iterator[Tuple[PathLink, List[BytesOrStr], List[BytesOrStr]]]:
         return walk(
-            self.name,
+            self,
             topdown    =topdown,
             onerror    =onerror,
             followlinks=not self.follow_symlinks
         )
 
-    @dst2path
     def copytree(
             self,
             dst:                      Union['Directory', PathLink],
@@ -822,7 +887,7 @@ class Directory(Path):
             dirs_exist_ok:            bool                         = False
     ) -> None:
         copytree(
-            self.name, dst,
+            self, dst,
             symlinks                =symlinks,
             ignore                  =ignore,
             copy_function           =copy_function,
@@ -836,28 +901,32 @@ class Directory(Path):
             ignore_errors: bool               = False,
             onerror:       Optional[Callable] = None
     ) -> None:
-        for name in listdir(self.name):
-            path: PathLink = join(self.name, name)
+        for name in listdir(self):
+            path: PathLink = join(self, name)
             if isdir(path):
                 rmtree(path, ignore_errors=ignore_errors, onerror=onerror)
             else:
-                remove(path)
+                try:
+                    remove(self)
+                except FileNotFoundError:
+                    if not ignore_errors:
+                        raise
 
     def mkdir(self, mode: int = 0o777, *, ignore_exists: bool = False) -> None:
         try:
-            mkdir(self.name, mode)
+            mkdir(self, mode)
         except FileExistsError:
             if not ignore_exists:
                 raise
 
     def makedirs(self, mode: int = 0o777, *, exist_ok: bool = False) -> None:
-        makedirs(self.name, mode, exist_ok=exist_ok)
+        makedirs(self, mode, exist_ok=exist_ok)
 
     def rmdir(self) -> None:
-        rmdir(self.name)
+        rmdir(self)
 
     def removedirs(self) -> None:
-        removedirs(self.name)
+        removedirs(self)
 
     def rmtree(
             self,
@@ -865,14 +934,14 @@ class Directory(Path):
             ignore_errors: bool               = False,
             onerror:       Optional[Callable] = None
     ) -> None:
-        rmtree(self.name, ignore_errors=ignore_errors, onerror=onerror)
+        rmtree(self, ignore_errors=ignore_errors, onerror=onerror)
 
     @property
     def isempty(self) -> bool:
-        return not bool(listdir(self.name))
+        return not bool(listdir(self))
 
     def chdir(self) -> None:
-        chdir(self.name)
+        chdir(self)
 
 
 class File(Path):
@@ -883,12 +952,19 @@ class File(Path):
         instance = Path.__new__(cls, name, strict=strict, **kw)
 
         if strict and not isfile(name):
-            raise ge.NotAFileError(f'system path {repr(name)} is not a file.')
+            raise ge.NotAFileError(f'system path {name!r} is not a file.')
 
         return instance
 
     def __bool__(self) -> bool:
         return self.isfile
+
+    def __truediv__(self, other: Any, /) -> NoReturn:
+        x: str = __package__ + '.' + File.__name__
+        y: str = other.__class__.__name__
+        if hasattr(other, '__module__'):
+            y: str = other.__module__ + '.' + y
+        raise TypeError(f'unsupported operand type(s) for /: "{x}" and "{y}".')
 
     @property
     def open(self) -> 'Open':
@@ -896,7 +972,7 @@ class File(Path):
 
     @property
     def content(self) -> bytes:
-        return FileIO(self.name).read()
+        return FileIO(self).read()
 
     @content.setter
     def content(self, content: bytes) -> None:
@@ -907,11 +983,11 @@ class File(Path):
                 'content type to be written can only be "bytes", '
                 f'not "{content.__class__.__name__}".'
             )
-        FileIO(self.name, 'wb').write(content)
+        FileIO(self, 'wb').write(content)
 
     @content.deleter
     def content(self) -> None:
-        truncate(self.name, 0)
+        truncate(self, 0)
 
     @property
     def contents(self) -> 'Content':
@@ -923,15 +999,14 @@ class File(Path):
         pass
 
     def splitext(self) -> Tuple[BytesOrStr, BytesOrStr]:
-        return splitext(self.name)
+        return splitext(self)
 
     @property
     def extension(self) -> BytesOrStr:
-        return splitext(self.name)[1]
+        return splitext(self)[1]
 
-    @dst2path
-    def copy(self, dst: PathLink, /) -> None:
-        copyfile(self.name, dst, follow_symlinks=self.follow_symlinks)
+    def copy(self, dst: Union[PathType, PathLink], /) -> None:
+        copyfile(self, dst, follow_symlinks=self.follow_symlinks)
 
     def copycontent(
             self,
@@ -941,7 +1016,7 @@ class File(Path):
     ) -> Union['File', FileIO]:
         write, read = (
             FileIO(other.name, 'wb') if isinstance(other, File) else other
-        ).write, FileIO(self.name).read
+        ).write, FileIO(self).read
 
         while True:
             content = read(bufsize)
@@ -951,10 +1026,9 @@ class File(Path):
 
         return other
 
-    @dst2path
-    def link(self, dst: PathLink, /) -> None:
+    def link(self, dst: Union[PathType, PathLink], /) -> None:
         link(
-            self.name, dst,
+            self, dst,
             src_dir_fd     =self.dir_fd,
             dst_dir_fd     =self.dir_fd,
             follow_symlinks=self.follow_symlinks
@@ -962,13 +1036,13 @@ class File(Path):
 
     @property
     def isempty(self) -> bool:
-        return not bool(getsize(self.name))
+        return not bool(getsize(self))
 
     def truncate(self, length: int) -> None:
-        truncate(self.name, length)
+        truncate(self, length)
 
     def clear(self) -> None:
-        truncate(self.name, 0)
+        truncate(self, 0)
 
     if sys.platform == 'win32':
         def mknod(
@@ -979,12 +1053,12 @@ class File(Path):
                 **__
         ) -> None:
             try:
-                FileIO(self.name, 'xb')
+                FileIO(self, 'xb')
             except FileExistsError:
                 if not ignore_exists:
                     raise
             else:
-                chmod(self.name, mode)
+                chmod(self, mode)
     else:
         def mknod(
                 self,
@@ -994,7 +1068,7 @@ class File(Path):
                 ignore_exists: bool = False
         ) -> None:
             try:
-                mknod(self.name, mode, device, dir_fd=self.dir_fd)
+                mknod(self, mode, device, dir_fd=self.dir_fd)
             except FileExistsError:
                 if not ignore_exists:
                     raise
@@ -1006,24 +1080,24 @@ class File(Path):
             device:        int  = 0,
             ignore_exists: bool = False
     ) -> None:
-        parentdir: PathLink = dirname(self.name)
+        parentdir: PathLink = dirname(self)
         if not (parentdir in ('', b'') or exists(parentdir)):
             makedirs(parentdir, mode, exist_ok=True)
         self.mknod(mode, device=device, ignore_exists=ignore_exists)
 
     def remove(self, *, ignore_errors: bool = False) -> None:
         try:
-            remove(self.name)
+            remove(self)
         except FileNotFoundError:
             if not ignore_errors:
                 raise
 
     def unlink(self) -> None:
-        unlink(self.name, dir_fd=self.dir_fd)
+        unlink(self, dir_fd=self.dir_fd)
 
     def md5(self, salting: bytes = b'') -> str:
         m5 = md5(salting)
-        read = FileIO(self.name).read
+        read = FileIO(self).read
 
         while True:
             content = read(__read_bufsize__)
@@ -1071,17 +1145,13 @@ class Open(ReadOnly):
         methods = object.__dir__(self)
         methods.remove('__modes__')
         methods.remove('__pass__')
-        methods.remove('__path__')
         methods += self.__modes__
         return methods
 
     def __repr__(self) -> str:
-        return f'<{__package__}.{self.__class__.__name__} ' \
-               f'file={repr(self.__path__)}>'
-
-    @property
-    def __path__(self) -> PathLink:
-        return self.file.name if isinstance(self.file, File) else self.file
+        filelink: PathLink = \
+            self.file.name if isinstance(self.file, File) else self.file
+        return f'<{__package__}.{self.__class__.__name__} file={filelink!r}>'
 
     def __pass__(self, buffer: Type[BufferedIOBase], mode: OpenMode) -> Closure:
         def init_buffer_instance(
@@ -1096,7 +1166,7 @@ class Open(ReadOnly):
         ) -> Union[BufferedIOBase, TextIOWrapper]:
             buf: BufferedIOBase = buffer(
                 raw=FileIO(
-                    file  =self.__path__,
+                    file  =self.file,
                     mode  =mode.replace('_plus', '+'),
                     opener=opener
                 ),
@@ -1127,10 +1197,10 @@ class Content(Open):
 
     def __ior__(self, other: Union['Content', bytes], /) -> 'Content':
         if isinstance(other, Content):
-            if abspath(other.__path__) == abspath(self.__path__):
+            if abspath(other.file) == abspath(self.file):
                 raise ge.IsSameFileError(
                     'source and destination cannot be the same, '
-                    f'path "{abspath(self.__path__)}".'
+                    f'path "{abspath(self.file)}".'
                 )
             read, write = other.rb().read, self.wb().write
             while True:
@@ -1173,12 +1243,8 @@ class Content(Open):
             return True
 
         if isinstance(other, Content):
-            if isinstance(self.file, File) or isinstance(other.file, File):
-                if self.file == other.file:
-                    return True
-            elif abspath(self.file) == abspath(other.file):
+            if abspath(self.file) == abspath(other.file):
                 return True
-
             read1, read2 = self.rb().read, other.rb().read
             while True:
                 content1 = read1(__read_bufsize__)
@@ -1227,10 +1293,10 @@ class Content(Open):
         return (line.rstrip(b'\r\n') for line in self.rb())
 
     def __len__(self) -> int:
-        return getsize(self.__path__)
+        return getsize(self.file)
 
     def __bool__(self) -> bool:
-        return bool(getsize(self.__path__))
+        return bool(getsize(self.file))
 
     def read(self, size: int = -1, /) -> bytes:
         return self.rb().read(size)
@@ -1242,7 +1308,7 @@ class Content(Open):
         self.__iadd__(content)
 
     def contains(self, subcontent: bytes, /) -> bool:
-        return self.__contains__(subcontent)
+        return subcontent in self
 
     def copy(
             self,
@@ -1260,10 +1326,10 @@ class Content(Open):
             write(content)
 
     def truncate(self, length: int, /) -> None:
-        truncate(self.__path__, length)
+        truncate(self.file, length)
 
     def clear(self) -> None:
-        truncate(self.__path__, 0)
+        truncate(self.file, 0)
 
     def md5(self, salting: bytes = b'') -> str:
         m5 = md5(salting)
@@ -1394,6 +1460,7 @@ class SystemPath(Directory, File):
             follow_symlinks=follow_symlinks
         )
 
-    __bool__ = Path.__bool__
+    __bool__    = Path.__bool__
+    __truediv__ = Path.__truediv__
 
     isempty = Path.isempty

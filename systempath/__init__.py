@@ -1,7 +1,7 @@
-"""(OOP) Operating system paths and files.
+"""Object-oriented operation of files and system paths.
 
-Let Python operating system paths and files become Simple, Simpler, Simplest,
-Humanization, Unification, Flawless.
+Make Python operation of files and system paths become simple, simpler,
+simplest, humane, unified, and flawless.
 
     >>> from systempath import SystemPath, Directory, File
 
@@ -18,7 +18,7 @@ Humanization, Unification, Flawless.
     >>> file.open.rb().read()
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
 
-    @version: 1.0.14
+    @version: 1.1
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -46,10 +46,17 @@ from typing import (
     Callable, Iterator
 )
 
+if sys.version_info >= (3, 10):
+    from typing import TypeAlias
+else:
+    TypeAlias = TypeVar("TypeAlias")
+
 __all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
 
-BytesOrStr = TypeVar('BytesOrStr', bytes, str)
-PathLink   = BytesOrStr
+BytesOrStr: TypeAlias = TypeVar('BytesOrStr', bytes, str)
+PathLink:   TypeAlias = BytesOrStr
+PathType:   TypeAlias = \
+    TypeVar('PathType', 'Path', 'Directory', 'File', 'SystemPath')
 
 SystemPathNotFoundError:  Type[ge.GqylpyError] = ge.SystemPathNotFoundError
 NotAPathError:            Type[ge.GqylpyError] = ge.NotAPathError
@@ -130,25 +137,47 @@ class Path:
     def __bytes__(self) -> bytes:
         """Return the path of type bytes."""
 
-    def __eq__(self, other: ['Path', PathLink], /) -> bool:
+    def __eq__(self, other: [PathType, PathLink], /) -> bool:
         """Return True if the absolute path of the path instance is equal to the
         absolute path of another path instance (can also be a path link
         character) else False."""
 
-    def __ne__(self, other: ['Path', PathLink], /) -> bool:
-        return not self.__eq__(other)
-
     def __bool__(self) -> bool:
         return self.exists
 
+    def __fspath__(self) -> PathLink:
+        return self.name
+
+    def __truediv__(self, subpath: Union[PathType, PathLink], /) -> PathType:
+        """
+        Concatenate paths, where the right path can be an instance of a path or
+        a path link.Return a new concatenated path instance, whose
+        characteristics are inherited from the left path.
+
+        When `self.strict` is set to True, an exact instance of a directory or
+        file is returned. Otherwise, an instance of `SystemPath` is generally
+        returned.
+        """
+
+    def __add__(self, subpath: Union[PathType, PathLink], /) -> PathType:
+        return self / subpath
+
+    def __rtruediv__(self, dirpath: PathLink, /) -> PathType:
+        """Concatenate paths, where the left path is a path link. Return a new
+        concatenated path instance, whose characteristics are inherited from the
+        right path."""
+
+    def __radd__(self, dirpath: PathLink, /) -> PathType:
+        return dirpath / self
+
     @property
     def basename(self) -> BytesOrStr:
-        return os.path.basename(self.name)
+        return os.path.basename(self)
 
     @property
     def dirname(self) -> 'Directory':
         return Directory(
-            os.path.dirname(self.name),
+            os.path.dirname(self),
             strict         =self.strict,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
@@ -164,84 +193,84 @@ class Path:
         )
 
     @property
-    def abspath(self) -> 'Path':
+    def abspath(self) -> PathType:
         return self.__class__(
-            os.path.abspath(self.name),
+            os.path.abspath(self),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def realpath(self, *, strict: Optional[bool] = None) -> 'Path':
+    def realpath(self, *, strict: Optional[bool] = None) -> PathType:
         return self.__class__(
-            os.path.realpath(self.name, strict=strict),
+            os.path.realpath(self, strict=strict),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def relpath(self, start: Optional[PathLink] = None) -> 'Path':
+    def relpath(self, start: Optional[PathLink] = None) -> PathType:
         return self.__class__(
-            os.path.relpath(self.name, start=start),
+            os.path.relpath(self, start=start),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def normpath(self) -> 'Path':
+    def normpath(self) -> PathType:
         return self.__class__(
-            os.path.normpath(self.name),
+            os.path.normpath(self),
             strict         =self.strict,
             dir_fd         =self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
 
-    def expanduser(self) -> 'Path':
+    def expanduser(self) -> PathType:
         return self.__class__(
-            os.path.expanduser(self.name),
+            os.path.expanduser(self),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
-    def expandvars(self) -> 'Path':
+    def expandvars(self) -> PathType:
         return self.__class__(
-            os.path.expandvars(self.name),
+            os.path.expandvars(self),
             strict         =self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
     def split(self) -> Tuple[PathLink, BytesOrStr]:
-        return os.path.split(self.name)
+        return os.path.split(self)
 
     def splitdrive(self) -> Tuple[BytesOrStr, PathLink]:
-        return os.path.splitdrive(self.name)
+        return os.path.splitdrive(self)
 
     @property
     def isabs(self) -> bool:
-        return os.path.isabs(self.name)
+        return os.path.isabs(self)
 
     @property
     def exists(self) -> bool:
-        return os.path.exists(self.name)
+        return os.path.exists(self)
 
     @property
     def lexists(self) -> bool:
         """Like `self.exists`, but do not follow symbolic links, return True for
         broken symbolic links."""
-        return os.path.lexists(self.name)
+        return os.path.lexists(self)
 
     @property
     def isdir(self) -> bool:
-        return os.path.isdir(self.name)
+        return os.path.isdir(self)
 
     @property
     def isfile(self) -> bool:
-        return os.path.isfile(self.name)
+        return os.path.isfile(self)
 
     @property
     def islink(self) -> bool:
-        return os.path.islink(self.name)
+        return os.path.islink(self)
 
     @property
     def ismount(self) -> bool:
-        return os.path.ismount(self.name)
+        return os.path.ismount(self)
 
     @property
     def is_block_device(self) -> bool:
@@ -355,10 +384,10 @@ class Path:
 
     def move(
             self,
-            dst:           Union['Path', PathLink],
+            dst:           Union[PathType, PathLink],
             /, *,
             copy_function: Optional[Callable[[PathLink, PathLink], None]] = None
-    ) -> Union['Path', PathLink]:
+    ) -> Union[PathType, PathLink]:
         """
         Move the file or directory to another location, similar to the Unix
         system `mv` command. Call `shutil.move` internally.
@@ -378,8 +407,8 @@ class Path:
         """
 
     def copystat(
-            self, dst: Union['Path', PathLink], /
-    ) -> Union['Path', PathLink]:
+            self, dst: Union[PathType, PathLink], /
+    ) -> Union[PathType, PathLink]:
         """
         Copy the metadata of the file or directory to another file or directory,
         call `shutil.copystat` internally.
@@ -402,8 +431,8 @@ class Path:
         """
 
     def copymode(
-            self, dst: Union['Path', PathLink], /
-    ) -> Union['Path', PathLink]:
+            self, dst: Union[PathType, PathLink], /
+    ) -> Union[PathType, PathLink]:
         """
         Copy the mode bits of the file or directory to another file or
         directory, call `shutil.copymode` internally.
@@ -423,8 +452,8 @@ class Path:
         """
 
     def symlink(
-            self, dst: Union['Path', PathLink], /
-    ) -> Union['Path', PathLink]:
+            self, dst: Union[PathType, PathLink], /
+    ) -> Union[PathType, PathLink]:
         """
         Create a symbolic link to the file or directory, call `os.symlink`
         internally.
@@ -482,16 +511,16 @@ class Path:
 
     def getsize(self) -> int:
         """Get the size of the file, return 0 if the path is a directory."""
-        return os.path.getsize(self.name)
+        return os.path.getsize(self)
 
     def getctime(self) -> float:
-        return os.path.getctime(self.name)
+        return os.path.getctime(self)
 
     def getmtime(self) -> float:
-        return os.path.getmtime(self.name)
+        return os.path.getmtime(self)
 
     def getatime(self) -> float:
-        return os.path.getatime(self.name)
+        return os.path.getatime(self)
 
     def chmod(self, mode: int, /) -> None:
         """
@@ -759,10 +788,8 @@ class Directory(Path):
     """Pass a directory path link to get a directory object, which you can then
     use to do anything a directory can do."""
 
-    def __getitem__(
-            self, name: BytesOrStr
-    ) -> Union['SystemPath', 'Directory', 'File', Path]:
-        path: PathLink = os.path.join(self.name, name)
+    def __getitem__(self, name: BytesOrStr) -> PathType:
+        path: PathLink = os.path.join(self, name)
 
         if self.strict:
             if os.path.isdir(path):
@@ -776,7 +803,7 @@ class Directory(Path):
         return SystemPath(path)
 
     def __delitem__(self, name: BytesOrStr) -> None:
-        Path(os.path.join(self.name, name)).delete()
+        Path(os.path.join(self, name)).delete()
 
     def __iter__(self) -> Iterator[Union['Directory', 'File', Path]]:
         return self.subpaths
@@ -1003,7 +1030,7 @@ class Directory(Path):
     def chdir(self) -> None:
         """Change the working directory of the current process to the directory.
         """
-        os.chdir(self.name)
+        os.chdir(self)
 
 
 class File(Path):
@@ -1037,11 +1064,11 @@ class File(Path):
         and `Content.__ior__` only."""
 
     def splitext(self) -> Tuple[BytesOrStr, BytesOrStr]:
-        return os.path.splitext(self.name)
+        return os.path.splitext(self)
 
     @property
     def extension(self) -> BytesOrStr:
-        return os.path.splitext(self.name)[1]
+        return os.path.splitext(self)[1]
 
     def copy(self, dst: Union['File', PathLink], /) -> Union['File', PathLink]:
         """
@@ -1104,7 +1131,7 @@ class File(Path):
         """
 
     def truncate(self, length: int) -> None:
-        os.truncate(self.name, length)
+        os.truncate(self, length)
 
     def clear(self) -> None:
         self.truncate(0)
@@ -1469,9 +1496,6 @@ class Content:
         """Whether the contents of the current file equal the contents of
         another file (or a bytes object). If they all point to the same file
         then direct return True."""
-
-    def __ne__(self, other: Union['Content', bytes], /) -> bool:
-        return not self.__eq__(other)
 
     def __contains__(self, subcontent: bytes, /) -> bool:
         return self.contains(subcontent)
