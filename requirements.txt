@@ -1,1 +1,1 @@
-gqylpy_exception>=3.0.1
+exceptionx>=4.1.2,<5.0

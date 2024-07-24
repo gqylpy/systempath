@@ -1,7 +1,6 @@
 import setuptools
 import systempath as i
-
-from systempath import Content
+from systempath import File
 
 idoc: list = i.__doc__.split('\n')
 
@@ -20,12 +19,19 @@ setuptools.setup(
     license='Apache 2.0',
     url='http://gqylpy.com',
     project_urls={'Source': source},
-    description='Object-oriented operation of files and system paths.',
-    long_description=open('README.md', encoding='utf8').read(),
+    description='''
+        The `systempath` is a highly specialized library designed for Python
+        developers for file and system path manipulation. By providing an
+        intuitive and powerful object-oriented API, it significantly simplifies
+        complex file and directory management tasks, allowing developers to
+        focus more on implementing core business logic rather than the
+        intricacies of low-level file system operations.
+    '''.strip().replace('\n       ', ''),
+    long_description=File('README.md').content.decode('utf-8'),
     long_description_content_type='text/markdown',
     packages=[i.__name__],
     python_requires='>=3.8',
-    install_requires=[x.decode() for x in Content('requirements.txt') if x],
+    install_requires=[x.decode() for x in File('requirements.txt') if x],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
