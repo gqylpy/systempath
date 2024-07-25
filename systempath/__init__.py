@@ -1,7 +1,10 @@
-"""Object-oriented operation of files and system paths.
+"""A Professional Library for File and System Path Manipulation
 
-Make Python operation of files and system paths become simple, simpler,
-simplest, humane, unified, and flawless.
+The `systempath` is a highly specialized library designed for Python developers
+forfile and system path manipulation. By providing an intuitive and powerful
+object-oriented API, it significantly simplifies complex file and directory
+management tasks, allowing developers to focus more on implementing core
+business logic rather than the intricacies of low-level file system operations.
 
     >>> from systempath import SystemPath, Directory, File
 
@@ -15,15 +18,15 @@ simplest, humane, unified, and flawless.
     >>> file
     /home/gqylpy/alpha.txt
 
-    >>> file.open.rb().read()
+    >>> file.content
     b'GQYLPY \xe6\x94\xb9\xe5\x8f\x98\xe4\xb8\x96\xe7\x95\x8c'
-
-    @version: 1.1
-    @author: 竹永康 <gqylpy@outlook.com>
-    @source: https://github.com/gqylpy/systempath
 
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
+
+    @version: 1.1.1
+    @author: 竹永康 <gqylpy@outlook.com>
+    @source: https://github.com/gqylpy/systempath
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -39,7 +42,7 @@ limitations under the License.
 """
 import os
 import sys
-import gqylpy_exception as ge
+import exceptionx as ex
 
 from typing import (
     Type, TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO,
@@ -49,20 +52,21 @@ from typing import (
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
-    TypeAlias = TypeVar("TypeAlias")
+    TypeAlias = TypeVar('TypeAlias')
 
 __all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
 
-BytesOrStr: TypeAlias = TypeVar('BytesOrStr', bytes, str)
-PathLink:   TypeAlias = BytesOrStr
-PathType:   TypeAlias = \
-    TypeVar('PathType', 'Path', 'Directory', 'File', 'SystemPath')
+BytesOrStr:  TypeAlias = TypeVar('BytesOrStr', bytes, str)
+PathLink:    TypeAlias = BytesOrStr
+PathType:    TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
+FileOpener:  TypeAlias = Callable[[PathLink, int], int]
+FileNewline: TypeAlias = Literal['', '\n', '\r', '\r\n']
 
-SystemPathNotFoundError:  Type[ge.GqylpyError] = ge.SystemPathNotFoundError
-NotAPathError:            Type[ge.GqylpyError] = ge.NotAPathError
-NotAFileError:            Type[ge.GqylpyError] = ge.NotAFileError
-NotADirectoryOrFileError: Type[ge.GqylpyError] = ge.NotADirectoryOrFileError
-IsSameFileError:          Type[ge.GqylpyError] = ge.IsSameFileError
+SystemPathNotFoundError:  Type[ex.Error] = ex.SystemPathNotFoundError
+NotAPathError:            Type[ex.Error] = ex.NotAPathError
+NotAFileError:            Type[ex.Error] = ex.NotAFileError
+NotADirectoryOrFileError: Type[ex.Error] = ex.NotADirectoryOrFileError
+IsSameFileError:          Type[ex.Error] = ex.IsSameFileError
 
 
 class Path:
@@ -84,13 +88,14 @@ class Path:
 
         @param autoabs
             Automatically normalize the path link and convert to absolute path,
-            at initialization. Default False. It is always recommended that you
-            enable the parameter when the passed path is a relative path.
+            at initialization. The default is False. It is always recommended
+            that you enable the parameter when the passed path is a relative
+            path.
 
         @param strict
             Set to True to enable strict mode, which means that the passed path
             must exist, otherwise raise `SystemPathNotFoundError` (or other).
-            Default False.
+            The default is False.
 
         @param dir_fd
             This optional parameter applies only to the following methods:
@@ -118,10 +123,10 @@ class Path:
                 `listxattr`, `removexattr`, `walk`,       `copy`,
                 `link`
 
-            Used to indicate whether symbolic links are followed, default True.
-            If specified as False, and the last element of the parameter `path`
-            is a symbolic link, the action will point to the symbolic link
-            itself, not to the path to which the link points.
+            Used to indicate whether symbolic links are followed, the default is
+            True. If specified as False, and the last element of the parameter
+            `path` is a symbolic link, the action will point to the symbolic
+            link itself, not to the path to which the link points.
 
             This parameter may not be available on your platform, using them
             will raise `NotImplementedError` if unavailable.
@@ -178,8 +183,8 @@ class Path:
     def dirname(self) -> 'Directory':
         return Directory(
             os.path.dirname(self),
-            strict         =self.strict,
-            dir_fd         =self.dir_fd,
+            strict=self.strict,
+            dir_fd=self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
 
@@ -187,8 +192,8 @@ class Path:
         """Like `self.dirname`, and can specify the directory level."""
         return Directory(
             self.name.rsplit(os.sep, maxsplit=level)[0],
-            strict         =self.strict,
-            dir_fd         =self.dir_fd,
+            strict=self.strict,
+            dir_fd=self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
 
@@ -196,43 +201,43 @@ class Path:
     def abspath(self) -> PathType:
         return self.__class__(
             os.path.abspath(self),
-            strict         =self.strict,
+            strict=self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
     def realpath(self, *, strict: Optional[bool] = None) -> PathType:
         return self.__class__(
             os.path.realpath(self, strict=strict),
-            strict         =self.strict,
+            strict=self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
     def relpath(self, start: Optional[PathLink] = None) -> PathType:
         return self.__class__(
             os.path.relpath(self, start=start),
-            strict         =self.strict,
+            strict=self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
     def normpath(self) -> PathType:
         return self.__class__(
             os.path.normpath(self),
-            strict         =self.strict,
-            dir_fd         =self.dir_fd,
+            strict=self.strict,
+            dir_fd=self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
 
     def expanduser(self) -> PathType:
         return self.__class__(
             os.path.expanduser(self),
-            strict         =self.strict,
+            strict=self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
     def expandvars(self) -> PathType:
         return self.__class__(
             os.path.expandvars(self),
-            strict         =self.strict,
+            strict=self.strict,
             follow_symlinks=self.follow_symlinks
         )
 
@@ -305,8 +310,8 @@ class Path:
     def delete(
             self,
             *,
-            ignore_errors: Optional[bool]     = None,
-            onerror:       Optional[Callable] = None
+            ignore_errors: Optional[bool] = None,
+            onerror: Optional[Callable] = None
     ) -> None:
         """
         Delete the path, if the path is a file then call `os.remove` internally,
@@ -314,7 +319,8 @@ class Path:
 
         @param ignore_errors
             If the path does not exist will raise `FileNotFoundError`, can set
-            this parameter to True to silence the exception. Default False.
+            this parameter to True to silence the exception. The default is
+            False.
 
         @param onerror
             An optional error handler, used only if the path is a directory, for
@@ -384,7 +390,7 @@ class Path:
 
     def move(
             self,
-            dst:           Union[PathType, PathLink],
+            dst: Union[PathType, PathLink],
             /, *,
             copy_function: Optional[Callable[[PathLink, PathLink], None]] = None
     ) -> Union[PathType, PathLink]:
@@ -552,9 +558,9 @@ class Path:
                 `os.F_OK`: real value is 0, whether exists.
 
         @param effective_ids
-            Default False, this parameter may not be available on your platform,
-            using them will ignore if unavailable. You can look up `os.access`
-            for more description.
+            The default is False, this parameter may not be available on your
+            platform, using them will ignore if unavailable. You can look up
+            `os.access` for more description.
 
         If the optional initialization parameter `self.follow_symlinks` is
         specified as False, and the last element of the path is a symbolic link,
@@ -814,7 +820,7 @@ class Directory(Path):
     @staticmethod
     def home(
             *,
-            strict:          Optional[bool] = None,
+            strict: Optional[bool] = None,
             follow_symlinks: Optional[bool] = None
     ) -> 'Directory':
         return Directory(
@@ -856,7 +862,7 @@ class Directory(Path):
     def walk(
             self,
             *,
-            topdown: Optional[bool]     = None,
+            topdown: Optional[bool] = None,
             onerror: Optional[Callable] = None
     ) -> Iterator[Tuple[PathLink, List[BytesOrStr], List[BytesOrStr]]]:
         """
@@ -868,8 +874,8 @@ class Directory(Path):
             (current_directory_path, all_subdirectory_names, all_file_names)
 
         @param topdown
-            Default True, generate the directory tree from the outside in. If
-            specified as False, from the inside out.
+            The default is True, generate the directory tree from the outside
+            in. If specified as False, from the inside out.
 
         @param onerror
             An optional error handler, for more instructions see `os.walk`.
@@ -877,15 +883,17 @@ class Directory(Path):
 
     def copytree(
             self,
-            dst:                      Union['Directory', PathLink],
+            dst: Union['Directory', PathLink],
             /, *,
-            symlinks:                 Optional[bool]                     = None,
-            ignore: Optional[Callable[
-                [PathLink, List[BytesOrStr]], List[BytesOrStr]]]         = None,
-            copy_function: Optional[Callable[[PathLink, PathLink], None]]
-                                                                         = None,
-            ignore_dangling_symlinks: Optional[bool]                     = None,
-            dirs_exist_ok:            Optional[bool]                     = None
+            symlinks: Optional[bool] = None,
+            ignore: Optional[
+                Callable[[PathLink, List[BytesOrStr]], List[BytesOrStr]]
+            ] = None,
+            copy_function: Optional[
+                Callable[[PathLink, PathLink], None]
+            ] = None,
+            ignore_dangling_symlinks: Optional[bool] = None,
+            dirs_exist_ok: Optional[bool] = None
     ) -> Union['Directory', PathLink]:
         """
         Copy the directory tree recursively, call `shutil.copytree` internally.
@@ -898,7 +906,7 @@ class Directory(Path):
             For symbolic links in the source tree, the content of the file to
             which the symbolic link points is copied by default. If this
             parameter is set to True, the symbolic link itself is copied.
-            Default False.
+            The default is False.
 
             If the file to which the symbolic link points does not exist, raise
             an exception at the end of the replication process. If you do not
@@ -933,8 +941,8 @@ class Directory(Path):
 
         @param ignore_dangling_symlinks
             Used to ignore exceptions raised by symbolic link errors, use with
-            parameter `symlinks`. Default False. This parameter has no effect on
-            platforms that do not support `os.symlink`.
+            parameter `symlinks`. The default is False. This parameter has no
+            effect on platforms that do not support `os.symlink`.
 
         @param dirs_exist_ok
             If the destination path already exists will raise `FileExistsError`,
@@ -954,7 +962,7 @@ class Directory(Path):
 
     def mkdir(
             self,
-            mode:          Optional[int]  = None,
+            mode: Optional[int] = None,
             *,
             ignore_exists: Optional[bool] = None
     ) -> None:
@@ -971,12 +979,12 @@ class Directory(Path):
         @param ignore_exists
             If the directory already exists, call this method will raise
             `FileExistsError`. But, if this parameter is set to True then
-            silently skip. Default False.
+            silently skip. The default is False.
         """
 
     def makedirs(
             self,
-            mode:     Optional[int]  = None,
+            mode: Optional[int] = None,
             *,
             exist_ok: Optional[bool] = None
     ) -> None:
@@ -993,7 +1001,8 @@ class Directory(Path):
 
         @param exist_ok
             If the directory already exists will raise `FileExistsError`, can
-            set this parameter to True to silence the exception. Default False.
+            set this parameter to True to silence the exception. The default is
+            False.
         """
 
     def rmdir(self) -> None:
@@ -1013,15 +1022,16 @@ class Directory(Path):
     def rmtree(
             self,
             *,
-            ignore_errors: Optional[bool]     = None,
-            onerror:       Optional[Callable] = None
+            ignore_errors: Optional[bool] = None,
+            onerror: Optional[Callable] = None
     ) -> None:
         """
         Delete the directory tree recursively, call `shutil.rmtree` internally.
 
         @param ignore_errors
             If the directory does not exist will raise `FileNotFoundError`, can
-            set this parameter to True to silence the exception. Default False.
+            set this parameter to True to silence the exception. The default is
+            False.
 
         @param onerror
             An optional error handler, described more see `shutil.rmtree`.
@@ -1039,6 +1049,12 @@ class File(Path):
 
     def __bool__(self) -> bool:
         return self.isfile
+
+    def __contains__(self, subcontent: bytes, /) -> bool:
+        return subcontent in self.contents
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self.contents
 
     @property
     def open(self) -> 'Open':
@@ -1088,9 +1104,9 @@ class File(Path):
 
     def copycontent(
             self,
-            dst:     Union['File', BinaryIO],
+            dst: Union['File', BinaryIO],
             /, *,
-            bufsize: Optional[int]           = None
+            bufsize: Optional[int] = None
     ) -> Union['File', BinaryIO]:
         """
         Copy the file contents to another file.
@@ -1138,9 +1154,9 @@ class File(Path):
 
     def mknod(
             self,
-            mode:          Optional[int]  = None,
+            mode: Optional[int] = None,
             *,
-            device:        Optional[int]  = None,
+            device: Optional[int] = None,
             ignore_exists: Optional[bool] = None
     ) -> None:
         """
@@ -1160,14 +1176,14 @@ class File(Path):
         @param ignore_exists
             If the file already exists, call this method will raise
             `FileExistsError`. But, if this parameter is set to True then
-            silently skip. Default False.
+            silently skip. The default is False.
         """
 
     def mknods(
             self,
-            mode:          Optional[int]  = None,
+            mode: Optional[int] = None,
             *,
-            device:        Optional[int]  = None,
+            device: Optional[int] = None,
             ignore_exists: Optional[bool] = None
     ) -> None:
         """Create the file and all intermediate paths, super version of
@@ -1181,7 +1197,8 @@ class File(Path):
 
         @param ignore_errors
             If the file does not exist will raise `FileNotFoundError`, can set
-            this parameter to True to silence the exception. Default False.
+            this parameter to True to silence the exception. The default is
+            False.
         """
 
     def unlink(self) -> None:
@@ -1306,7 +1323,7 @@ class Open:
 
     @param line_buffering
         If set to True, automatically call `flush()` when writing contains a
-        newline character, default False.
+        newline character, The default is False.
 
     @param write_through
         We do not find any description of this parameter in the Python3 source
@@ -1325,151 +1342,151 @@ class Open:
     def rb(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def wb(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def xb(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def ab(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def rb_plus(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def wb_plus(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def xb_plus(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def ab_plus(
             self,
             *,
-            bufsize: Optional[int]                            = None,
-            opener:  Optional[Callable[[PathLink, int], int]] = None
+            bufsize: Optional[int]        = None,
+            opener:  Optional[FileOpener] = None
     ) -> BinaryIO: ...
 
     def r(
             self,
             *,
-            bufsize:  Optional[int]                             = None,
-            encoding: Optional[str]                             = None,
-            errors:   Optional[str]                             = None,
-            newline:  Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            opener:   Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:  Optional[int]         = None,
+            encoding: Optional[str]         = None,
+            errors:   Optional[str]         = None,
+            newline:  Optional[FileNewline] = None,
+            opener:   Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def w(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def x(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def a(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def r_plus(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def w_plus(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def x_plus(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
     def a_plus(
             self,
             *,
-            bufsize:        Optional[int]                             = None,
-            encoding:       Optional[str]                             = None,
-            errors:         Optional[str]                             = None,
-            newline:        Optional[Literal['', '\n', '\r', '\r\n']] = None,
-            line_buffering: Optional[bool]                            = None,
-            write_through:  Optional[bool]                            = None,
-            opener:         Optional[Callable[[PathLink, int], int]]  = None
+            bufsize:        Optional[int]         = None,
+            encoding:       Optional[str]         = None,
+            errors:         Optional[str]         = None,
+            newline:        Optional[FileNewline] = None,
+            line_buffering: Optional[bool]        = None,
+            write_through:  Optional[bool]        = None,
+            opener:         Optional[FileOpener]  = None
     ) -> TextIO: ...
 
 
@@ -1527,9 +1544,9 @@ class Content:
 
     def copy(
             self,
-            dst:     Union['Content', BinaryIO],
+            dst: Union['Content', BinaryIO],
             /, *,
-            bufsize: Optional[int]              = None
+            bufsize: Optional[int] = None
     ) -> None:
         """
         Copy the file contents to another file.
@@ -1580,7 +1597,7 @@ def tree(
         True.
 
     @param omit_dir
-        Omit all subdirectories when yielding paths. Default False.
+        Omit all subdirectories when yielding paths. The default is False.
 
     @param pure_path
         By default, if the subpath is a directory then yield a `Directory`
@@ -1590,7 +1607,7 @@ def tree(
 
     @param shortpath
         Yield short path link string, delete the `dirpath` from the left end of
-        the path, used with the parameter `pure_path`. Default False.
+        the path, used with the parameter `pure_path`. The default is False.
     """
 
 
@@ -1598,16 +1615,30 @@ class SystemPath(Directory, File):
 
     def __init__(
             self,
-            root:    Optional[PathLink] = None,
+            root: Optional[PathLink] = None,
             /, *,
-            autoabs: Optional[bool]     = None,
-            strict:  Optional[bool]     = None
+            autoabs: Optional[bool] = None,
+            strict: Optional[bool] = None
     ):
-        super().__init__(
-            '.' if root in (None, '') else b'.' if root == b'' else root,
-            autoabs=autoabs,
-            strict =strict
-        )
+        """
+        @param root
+            A path link, hopefully absolute. If it is a relative path, the
+            current working directory is used as the parent directory (the
+            return value of `os.getcwd()`). The default value is also the return
+            value of `os.getcwd()`.
+
+        @param autoabs
+            Automatically normalize the path link and convert to absolute path,
+            at initialization. The default is False. It is always recommended
+            that you enable the parameter when the passed path is a relative
+            path.
+
+        @param strict
+            Set to True to enable strict mode, which means that the passed path
+            must exist, otherwise raise `SystemPathNotFoundError` (or other).
+            The default is False.
+        """
+        super().__init__(root, autoabs=autoabs, strict =strict)
 
 
 class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
