@@ -24,7 +24,7 @@ business logic rather than the intricacies of low-level file system operations.
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
-    @version: 1.1.2
+    @version: 1.1.3
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -42,7 +42,6 @@ limitations under the License.
 """
 import os
 import sys
-import exceptionx as ex
 
 from typing import (
     Type, TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO,
@@ -62,11 +61,17 @@ PathType:    TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
 FileOpener:  TypeAlias = Callable[[PathLink, int], int]
 FileNewline: TypeAlias = Literal['', '\n', '\r', '\r\n']
 
-SystemPathNotFoundError:  Type[ex.Error] = ex.SystemPathNotFoundError
-NotAPathError:            Type[ex.Error] = ex.NotAPathError
-NotAFileError:            Type[ex.Error] = ex.NotAFileError
-NotADirectoryOrFileError: Type[ex.Error] = ex.NotADirectoryOrFileError
-IsSameFileError:          Type[ex.Error] = ex.IsSameFileError
+try:
+    import exceptionx as ex
+except ModuleNotFoundError:
+    if os.path.basename(sys.argv[0]) != 'setup.py':
+        raise
+else:
+    SystemPathNotFoundError:  Type[ex.Error] = ex.SystemPathNotFoundError
+    NotAPathError:            Type[ex.Error] = ex.NotAPathError
+    NotAFileError:            Type[ex.Error] = ex.NotAFileError
+    NotADirectoryOrFileError: Type[ex.Error] = ex.NotADirectoryOrFileError
+    IsSameFileError:          Type[ex.Error] = ex.IsSameFileError
 
 
 class Path:
