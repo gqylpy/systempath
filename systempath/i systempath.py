@@ -1400,7 +1400,7 @@ class tree:
         for name in listdir(dirpath):
             path: PathLink = join(dirpath, name)
             is_dir: bool = isdir(path)
-            if not is_dir or not self.omit_dir:
+            if not (is_dir and self.omit_dir):
                 yield self.path(path, is_dir=is_dir)
             if level > 1 and is_dir:
                 yield from self.topdown(path, level=level - 1)
@@ -1413,7 +1413,7 @@ class tree:
             is_dir: bool = isdir(path)
             if level > 1 and is_dir:
                 yield from self.downtop(path, level=level - 1)
-            if not is_dir or not self.omit_dir:
+            if not (is_dir and self.omit_dir):
                 yield self.path(path, is_dir=is_dir)
 
     def path(

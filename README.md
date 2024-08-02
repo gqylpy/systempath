@@ -1,4 +1,4 @@
-[<img alt="LOGO" src="http://www.gqylpy.com/static/img/favicon.ico" height="21" width="21"/>](http://www.gqylpy.com)
+[<img alt="LOGO" src="https://python.org/favicon.ico" height="21" width="21"/>](http://gqylpy.com)
 [![Release](https://img.shields.io/github/release/gqylpy/systempath.svg?style=flat-square)](https://github.com/gqylpy/systempath/releases/latest)
 [![Python Versions](https://img.shields.io/pypi/pyversions/systempath)](https://pypi.org/project/systempath)
 [![License](https://img.shields.io/pypi/l/systempath)](https://github.com/gqylpy/systempath/blob/master/LICENSE)

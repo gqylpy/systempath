@@ -20,12 +20,9 @@ setuptools.setup(
     url='http://gqylpy.com',
     project_urls={'Source': source},
     description='''
-        The `systempath` is a highly specialized library designed for Python
-        developers for file and system path manipulation. By providing an
-        intuitive and powerful object-oriented API, it significantly simplifies
-        complex file and directory management tasks, allowing developers to
-        focus more on implementing core business logic rather than the
-        intricacies of low-level file system operations.
+        The `systempath` is a library designed for Python developers, providing
+        intuitive and powerful APIs that simplify file and directory management
+        tasks, allowing developers to focus more on core business logic.
     '''.strip().replace('\n       ', ''),
     long_description=File('README.md').content.decode('utf-8'),
     long_description_content_type='text/markdown',
