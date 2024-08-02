@@ -99,7 +99,8 @@ if sys.version_info >= (3, 10):
 else:
     TypeAlias = TypeVar('TypeAlias')
 
-import exceptionx as ex
+if basename(sys.argv[0]) != 'setup.py':
+    import exceptionx as ex
 
 BytesOrStr: TypeAlias = Union[bytes, str]
 PathLink:   TypeAlias = BytesOrStr

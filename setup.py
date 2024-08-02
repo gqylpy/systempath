@@ -11,6 +11,9 @@ for index, line in enumerate(idoc):
 _, author, email = idoc[index + 1].split()
 source = idoc[index + 2].split()[-1]
 
+requires_file = \
+    File('requirements.txt') or File('systempath.egg-info/requires.txt')
+
 setuptools.setup(
     name=i.__name__,
     version=version,
@@ -28,7 +31,7 @@ setuptools.setup(
     long_description_content_type='text/markdown',
     packages=[i.__name__],
     python_requires='>=3.8',
-    install_requires=[x.decode() for x in File('requirements.txt') if x],
+    install_requires=[x.decode() for x in requires_file if x],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
