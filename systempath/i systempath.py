@@ -51,14 +51,14 @@ if sys.platform != 'win32':
         def getpwuid(_): raise NotImplementedError
         getgrgid = getpwuid
 
-    __read_bufsize__ = 1024 * 64
+    READ_BUFSIZE = 1024 * 64
 else:
-    __read_bufsize__ = 1024 * 1024
+    READ_BUFSIZE = 1024 * 1024
 
 from os.path import (
     basename, dirname,    abspath,    realpath,   relpath,
     normpath, expanduser, expandvars,
-    join,     split,      splitext,   splitdrive,
+    join,     split,      splitext,   splitdrive, sep,
     isabs,    exists,     isdir,      isfile,     islink,  ismount,
     getctime, getmtime,   getatime,   getsize
 )
@@ -125,6 +125,8 @@ EncodingErrorHandlingMode: TypeAlias = Annotated[Literal[
 ], 'The error handling modes for encoding and decoding (strictness).']
 
 UNIQUE: Final[Annotated[object, 'A unique object.']] = object()
+
+sepb: Final[Annotated[bytes, 'The byte type path separator.']] = sep.encode()
 
 
 class MasqueradeClass(type):
@@ -459,6 +461,10 @@ class Path(ReadOnly):
             dir_fd=self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
+
+    def ldirname(self, *, level: int = 1) -> PathType:
+        sepx: BytesOrStr = sepb if self.name.__class__ is bytes else sep
+        return Directory(sepx.join(self.name.split(sepx)[level:]))
 
     @property
     def abspath(self) -> PathType:
@@ -868,6 +874,40 @@ class Directory(Path):
             followlinks=not self.follow_symlinks
         )
 
+    def search(
+            self,
+            slicing:   BytesOrStr,
+            /, *,
+            level:     int            = float('inf'),
+            omit_dir:  bool           = False,
+            pure_path: Optional[bool] = None,
+            shortpath: bool           = False
+    ) -> Iterator[Union[PathType, PathLink]]:
+        slicing: BytesOrStr = normpath(slicing)
+        nullchar: BytesOrStr = b'' if self.name.__class__ is bytes else ''
+        dirtree = tree(
+            self.name, level=level, omit_dir=omit_dir,
+            pure_path=pure_path, shortpath=shortpath
+        )
+        for subpath in dirtree:
+            pure_subpath = (subpath if pure_path else subpath.name)\
+                .replace(self.name, nullchar)[1:]
+            try:
+                r: bool = slicing in pure_subpath
+            except TypeError:
+                if slicing.__class__ is bytes:
+                    slicing: str = slicing.decode()
+                elif slicing.__class__ is str:
+                    slicing: bytes = slicing.encode()
+                else:
+                    raise ex.ParameterError(
+                        'parameter "slicing" must be of type bytes or str，'
+                        f'not "{slicing.__class__.__name__}".'
+                    ) from None
+                r: bool = slicing in pure_subpath
+            if r:
+                yield subpath
+
     def copytree(
             self,
             dst:                      Union['Directory', PathLink],
@@ -1008,7 +1048,7 @@ class File(Path):
             self,
             other: Union['File', FileIO],
             /, *,
-            bufsize: int = __read_bufsize__
+            bufsize: int = READ_BUFSIZE
     ) -> Union['File', FileIO]:
         write, read = (
             FileIO(other.name, 'wb') if isinstance(other, File) else other
@@ -1096,7 +1136,7 @@ class File(Path):
         read = FileIO(self).read
 
         while True:
-            content = read(__read_bufsize__)
+            content = read(READ_BUFSIZE)
             if not content:
                 break
             m5.update(content)
@@ -1200,7 +1240,7 @@ class Content(Open):
                 )
             read, write = other.rb().read, self.wb().write
             while True:
-                content = read(__read_bufsize__)
+                content = read(READ_BUFSIZE)
                 if not content:
                     break
                 write(content)
@@ -1220,7 +1260,7 @@ class Content(Open):
         if isinstance(other, Content):
             read, write = other.rb().read, self.ab().write
             while True:
-                content = read(__read_bufsize__)
+                content = read(READ_BUFSIZE)
                 if not content:
                     break
                 write(content)
@@ -1243,24 +1283,24 @@ class Content(Open):
                 return True
             read1, read2 = self.rb().read, other.rb().read
             while True:
-                content1 = read1(__read_bufsize__)
-                content2 = read2(__read_bufsize__)
+                content1 = read1(READ_BUFSIZE)
+                content2 = read2(READ_BUFSIZE)
                 if content1 == content2 == b'':
                     return True
                 if content1 != content2:
                     return False
 
         elif other.__class__ is bytes:
-            start, end = 0, __read_bufsize__
+            start, end = 0, READ_BUFSIZE
             read1 = self.rb().read
             while True:
-                content1 = read1(__read_bufsize__)
+                content1 = read1(READ_BUFSIZE)
                 if content1 == other[start:end] == b'':
                     return True
                 if content1 != other[start:end]:
                     return False
-                start += __read_bufsize__
-                end   += __read_bufsize__
+                start += READ_BUFSIZE
+                end   += READ_BUFSIZE
 
         raise TypeError(
             'content type to be equality judgment operation can only be '
@@ -1278,7 +1318,7 @@ class Content(Open):
         read = self.rb().read
 
         while True:
-            content = read(__read_bufsize__)
+            content = read(READ_BUFSIZE)
             if not content:
                 return False
             if subcontent in deviation_value + content:
@@ -1310,7 +1350,7 @@ class Content(Open):
             self,
             other: Union['Content', FileIO],
             /, *,
-            bufsize: int = __read_bufsize__
+            bufsize: int = READ_BUFSIZE
     ) -> None:
         write = (other.ab() if isinstance(other, Content) else other).write
         read = self.rb().read
@@ -1332,7 +1372,7 @@ class Content(Open):
         read = self.rb().read
 
         while True:
-            content = read(__read_bufsize__)
+            content = read(READ_BUFSIZE)
             if not content:
                 break
             m5.update(content)

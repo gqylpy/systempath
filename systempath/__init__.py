@@ -24,7 +24,7 @@ business logic rather than the intricacies of low-level file system operations.
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
-    @version: 1.1.3
+    @version: 1.1.4
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -201,6 +201,10 @@ class Path:
             dir_fd=self.dir_fd,
             follow_symlinks=self.follow_symlinks
         )
+
+    def ldirname(self, *, level: Optional[int] = None) -> PathType:
+        """Cut the path from the left side, and can specify the cutting level
+        through the parameter `level`, with a default of 1 level."""
 
     @property
     def abspath(self) -> PathType:
@@ -884,6 +888,46 @@ class Directory(Path):
 
         @param onerror
             An optional error handler, for more instructions see `os.walk`.
+        """
+
+    def search(
+            self,
+            slicing:   BytesOrStr,
+            /, *,
+            level:     Optional[int]  = None,
+            omit_dir:  Optional[bool] = None,
+            pure_path: Optional[bool] = None,
+            shortpath: Optional[bool] = None
+    ) -> Iterator[Union[PathType, PathLink]]:
+        """
+        Search for all paths containing the specified string fragment in the
+        current directory (and its subdirectories, according to the specified
+        search depth). It traverses the directory tree, checking whether each
+        path (which can be the path of a file or subdirectory) contains the
+        specified slicing string `slicing`. If a matching path is found, it
+        produces these paths as results.
+
+        @param slicing
+            The path slicing, which can be any part of the path.
+
+        @param level
+            Recursion depth of the directory, default is deepest. An int must be
+            passed in, any integer less than 1 is considered to be 1, warning
+            passing decimals can cause depth confusion.
+
+        @param omit_dir
+            Omit all subdirectories when yielding paths. The default is False.
+
+        @param pure_path
+            By default, if the subpath is a directory then yield a `Directory`
+            object, if the subpath is a file then yield a `File` object. If set
+            this parameter to True, directly yield the path link string (or
+            bytes). This parameter is not recommended for use.
+
+        @param shortpath
+            Yield short path link string, delete the `dirpath` from the left end
+            of the path, used with the parameter `pure_path`. The default is
+            False.
         """
 
     def copytree(
