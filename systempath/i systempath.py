@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import sys
+import typing
 import builtins
 import warnings
 import functools
@@ -86,6 +87,9 @@ from typing import (
     Iterator, Iterable, NoReturn, Any
 )
 
+if typing.TYPE_CHECKING:
+    from _typeshed import SupportsWrite
+
 if sys.version_info >= (3, 9):
     from typing import Annotated
 else:
@@ -99,13 +103,21 @@ if sys.version_info >= (3, 10):
 else:
     TypeAlias = TypeVar('TypeAlias')
 
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    Self = TypeVar('Self')
+
 if basename(sys.argv[0]) != 'setup.py':
     import exceptionx as ex
 
-BytesOrStr: TypeAlias = Union[bytes, str]
-PathLink:   TypeAlias = BytesOrStr
-PathType:   TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
-Closure:    TypeAlias = TypeVar('Closure', bound=Callable)
+BytesOrStr:     TypeAlias = Union[bytes, str]
+PathLink:       TypeAlias = BytesOrStr
+PathType:       TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
+Closure:        TypeAlias = TypeVar('Closure', bound=Callable)
+CopyFunction:   TypeAlias = Callable[[PathLink, PathLink], None]
+CopyTreeIgnore: TypeAlias = \
+    Callable[[PathLink, List[BytesOrStr]], List[BytesOrStr]]
 
 OpenMode: TypeAlias = Annotated[Literal[
     'rb', 'rb_plus', 'rt', 'rt_plus', 'r', 'r_plus',
@@ -913,8 +925,8 @@ class Directory(Path):
             dst:                      Union['Directory', PathLink],
             /, *,
             symlinks:                 bool                         = False,
-            ignore:                   Optional[Callable]           = None,
-            copy_function:            Callable                     = copy2,
+            ignore:                   Optional[CopyTreeIgnore]     = None,
+            copy_function:            CopyFunction                 = copy2,
             ignore_dangling_symlinks: bool                         = False,
             dirs_exist_ok:            bool                         = False
     ) -> None:
@@ -1011,7 +1023,7 @@ class File(Path):
         return FileIO(self).read()
 
     @content.setter
-    def content(self, content: bytes) -> None:
+    def content(self, content: bytes, /) -> None:
         if content.__class__ is not bytes:
             # Beware of original data loss due to write failures (the `content`
             # type error).
@@ -1046,12 +1058,12 @@ class File(Path):
 
     def copycontent(
             self,
-            other: Union['File', FileIO],
+            other: Union['File', 'SupportsWrite[bytes]'],
             /, *,
             bufsize: int = READ_BUFSIZE
-    ) -> Union['File', FileIO]:
+    ) -> Union['File', 'SupportsWrite[bytes]']:
         write, read = (
-            FileIO(other.name, 'wb') if isinstance(other, File) else other
+            FileIO(other, 'wb') if isinstance(other, File) else other
         ).write, FileIO(self).read
 
         while True:
@@ -1143,6 +1155,12 @@ class File(Path):
 
         return m5.hexdigest()
 
+    def read(self, size: int = -1, /) -> bytes:
+        return FileIO(self).read(size)
+
+    def write(self, content: bytes, /) -> int:
+        return Content(self).write(content)
+
 
 class Open(ReadOnly):
     __modes__ = {
@@ -1231,48 +1249,16 @@ class Content(Open):
     def __bytes__(self) -> bytes:
         return self.rb().read()
 
-    def __ior__(self, other: Union['Content', bytes], /) -> 'Content':
-        if isinstance(other, Content):
-            if abspath(other.file) == abspath(self.file):
-                raise ex.IsSameFileError(
-                    'source and destination cannot be the same, '
-                    f'path "{abspath(self.file)}".'
-                )
-            read, write = other.rb().read, self.wb().write
-            while True:
-                content = read(READ_BUFSIZE)
-                if not content:
-                    break
-                write(content)
-        # Beware of original data loss due to write failures (the `content` type
-        # error).
-        elif other.__class__ is bytes:
-            self.wb().write(other)
-        else:
-            raise TypeError(
-                'content type to be written can only be '
-                f'"{__package__}.{Content.__name__}" or "bytes", '
-                f'not "{other.__class__.__name__}".'
-            )
+    def __ior__(self, other: Union['Content', bytes], /) -> Self:
+        self.write(other)
         return self
 
-    def __iadd__(self, other: Union['Content', bytes], /) -> 'Content':
-        if isinstance(other, Content):
-            read, write = other.rb().read, self.ab().write
-            while True:
-                content = read(READ_BUFSIZE)
-                if not content:
-                    break
-                write(content)
-        elif other.__class__ is bytes:
-            self.ab().write(other)
-        else:
-            raise TypeError(
-                'content type to be appended can only be '
-                f'"{__package__}.{Content.__name__}" or "bytes", '
-                f'not "{other.__class__.__name__}".'
-            )
+    def __iadd__(self, other: Union['Content', bytes], /) -> Self:
+        self.append(other)
         return self
+
+    def __contains__(self, subcontent: bytes, /) -> bool:
+        return self.contains(subcontent)
 
     def __eq__(self, other: Union['Content', bytes], /) -> bool:
         if self is other:
@@ -1308,7 +1294,65 @@ class Content(Open):
             f'not "{other.__class__.__name__}".'
         )
 
-    def __contains__(self, subcontent: bytes, /) -> bool:
+    def __iter__(self) -> Iterator[bytes]:
+        return (line.rstrip(b'\r\n') for line in self.rb())
+
+    def __len__(self) -> int:
+        return getsize(self.file)
+
+    def __bool__(self) -> bool:
+        return bool(getsize(self.file))
+
+    def read(self, size: int = -1, /) -> bytes:
+        return self.rb().read(size)
+
+    def write(self, content: Union['Content', bytes], /) -> int:
+        if isinstance(content, Content):
+            if abspath(content.file) == abspath(self.file):
+                raise ex.IsSameFileError(
+                    'source and destination cannot be the same, '
+                    f'path "{abspath(self.file)}".'
+                )
+            read, write, count = content.rb().read, self.wb().write, 0
+            while True:
+                content = read(READ_BUFSIZE)
+                if not content:
+                    break
+                count += write(content)
+        # Beware of original data loss due to write failures (the `content` type
+        # error).
+        elif content.__class__ is bytes:
+            count = self.wb().write(content)
+        else:
+            raise TypeError(
+                'content type to be written can only be '
+                f'"{__package__}.{Content.__name__}" or "bytes", '
+                f'not "{content.__class__.__name__}".'
+            )
+        return count
+
+    def overwrite(self, content: Union['Content', bytes], /) -> int:
+        return self.write(content)
+
+    def append(self, content: Union['Content', bytes], /) -> int:
+        if isinstance(content, Content):
+            read, write, count = content.rb().read, self.ab().write, 0
+            while True:
+                content = read(READ_BUFSIZE)
+                if not content:
+                    break
+                count += write(content)
+        elif content.__class__ is bytes:
+            count = self.ab().write(content)
+        else:
+            raise TypeError(
+                'content type to be appended can only be '
+                f'"{__package__}.{Content.__name__}" or "bytes", '
+                f'not "{content.__class__.__name__}".'
+            )
+        return count
+
+    def contains(self, subcontent: bytes, /) -> bool:
         if subcontent == b'':
             return True
 
@@ -1325,30 +1369,9 @@ class Content(Open):
                 return True
             deviation_value = content[deviation_index:]
 
-    def __iter__(self) -> Iterator[bytes]:
-        return (line.rstrip(b'\r\n') for line in self.rb())
-
-    def __len__(self) -> int:
-        return getsize(self.file)
-
-    def __bool__(self) -> bool:
-        return bool(getsize(self.file))
-
-    def read(self, size: int = -1, /) -> bytes:
-        return self.rb().read(size)
-
-    def overwrite(self, content: Union['Content', bytes], /) -> None:
-        self.__ior__(content)
-
-    def append(self, content: Union['Content', bytes], /) -> None:
-        self.__iadd__(content)
-
-    def contains(self, subcontent: bytes, /) -> bool:
-        return self.__contains__(subcontent)
-
     def copy(
             self,
-            other: Union['Content', FileIO],
+            other: Union['Content', 'SupportsWrite[bytes]'],
             /, *,
             bufsize: int = READ_BUFSIZE
     ) -> None:
