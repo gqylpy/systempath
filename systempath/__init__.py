@@ -24,7 +24,7 @@ business logic rather than the intricacies of low-level file system operations.
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
-    @version: 1.1.4
+    @version: 1.1.5
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -42,24 +42,36 @@ limitations under the License.
 """
 import os
 import sys
+import typing
 
 from typing import (
     Type, TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO,
     Callable, Iterator
 )
 
+if typing.TYPE_CHECKING:
+    from _typeshed import SupportsWrite
+
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
 else:
     TypeAlias = TypeVar('TypeAlias')
 
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    Self = TypeVar('Self')
+
 __all__ = ['SystemPath', 'Path', 'Directory', 'File', 'Open', 'Content', 'tree']
 
-BytesOrStr:  TypeAlias = TypeVar('BytesOrStr', bytes, str)
-PathLink:    TypeAlias = BytesOrStr
-PathType:    TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
-FileOpener:  TypeAlias = Callable[[PathLink, int], int]
-FileNewline: TypeAlias = Literal['', '\n', '\r', '\r\n']
+BytesOrStr:     TypeAlias = TypeVar('BytesOrStr', bytes, str)
+PathLink:       TypeAlias = BytesOrStr
+PathType:       TypeAlias = Union['Path', 'Directory', 'File', 'SystemPath']
+FileOpener:     TypeAlias = Callable[[PathLink, int], int]
+FileNewline:    TypeAlias = Literal['', '\n', '\r', '\r\n']
+CopyFunction:   TypeAlias = Callable[[PathLink, PathLink], None]
+CopyTreeIgnore: TypeAlias = \
+    Callable[[PathLink, List[BytesOrStr]], List[BytesOrStr]]
 
 try:
     import exceptionx as ex
@@ -932,17 +944,13 @@ class Directory(Path):
 
     def copytree(
             self,
-            dst: Union['Directory', PathLink],
+            dst:                      Union['Directory', PathLink],
             /, *,
-            symlinks: Optional[bool] = None,
-            ignore: Optional[
-                Callable[[PathLink, List[BytesOrStr]], List[BytesOrStr]]
-            ] = None,
-            copy_function: Optional[
-                Callable[[PathLink, PathLink], None]
-            ] = None,
-            ignore_dangling_symlinks: Optional[bool] = None,
-            dirs_exist_ok: Optional[bool] = None
+            symlinks:                 Optional[bool]               = None,
+            ignore:                   Optional[CopyTreeIgnore]     = None,
+            copy_function:            Optional[CopyFunction]       = None,
+            ignore_dangling_symlinks: Optional[bool]               = None,
+            dirs_exist_ok:            Optional[bool]               = None
     ) -> Union['Directory', PathLink]:
         """
         Copy the directory tree recursively, call `shutil.copytree` internally.
@@ -1153,10 +1161,10 @@ class File(Path):
 
     def copycontent(
             self,
-            dst: Union['File', BinaryIO],
+            dst: Union['File', 'SupportsWrite[bytes]'],
             /, *,
             bufsize: Optional[int] = None
-    ) -> Union['File', BinaryIO]:
+    ) -> Union['File', 'SupportsWrite[bytes]']:
         """
         Copy the file contents to another file.
 
@@ -1252,6 +1260,20 @@ class File(Path):
 
     def unlink(self) -> None:
         """Remove the file, like `self.remove`, call `os.unlink` internally."""
+
+    def read(self, size: Optional[int] = None, /) -> bytes:
+        warnings.warn(
+            f'deprecated, replaced to {self.content} or {self.contents.read}.',
+            DeprecationWarning
+        )
+        return self.contents.read(size)
+
+    def write(self, content: bytes, /) -> int:
+        warnings.warn(
+            f'deprecated, replaced to {self.content} or {self.contents.write}.',
+            DeprecationWarning
+        )
+        return self.contents.write(content)
 
 
 class Open:
@@ -1550,11 +1572,11 @@ class Content:
     def __bytes__(self) -> bytes:
         return self.read()
 
-    def __ior__(self, other: Union['Content', bytes], /) -> 'Content':
-        self.overwrite(other)
+    def __ior__(self, other: Union['Content', bytes], /) -> Self:
+        self.write(other)
         return self
 
-    def __iadd__(self, other: Union['Content', bytes], /) -> 'Content':
+    def __iadd__(self, other: Union['Content', bytes], /) -> Self:
         self.append(other)
         return self
 
@@ -1576,14 +1598,21 @@ class Content:
     def __bool__(self) -> bool:
         """Return True if the file has content else False."""
 
-    def read(self, size: int = -1, /) -> bytes:
+    def read(self, size: Optional[int] = None, /) -> bytes:
         return Open(self.file).rb().read(size)
 
-    def overwrite(self, content: Union['Content', bytes], /) -> None:
+    def write(self, content: Union['Content', bytes], /) -> int:
         """Overwrite the current file content from another file content (or a
         bytes object)."""
 
-    def append(self, content: Union['Content', bytes], /) -> None:
+    def overwrite(self, content: Union['Content', bytes], /) -> int:
+        warnings.warn(
+            f'will be deprecated soon, replaced to {self.write}.',
+            DeprecationWarning
+        )
+        return self.write(content)
+
+    def append(self, content: Union['Content', bytes], /) -> int:
         """Append the another file contents (or a bytes object) to the current
         file."""
 
@@ -1593,7 +1622,7 @@ class Content:
 
     def copy(
             self,
-            dst: Union['Content', BinaryIO],
+            dst: Union['Content', 'SupportsWrite[bytes]'] = None,
             /, *,
             bufsize: Optional[int] = None
     ) -> None:
@@ -1687,7 +1716,7 @@ class SystemPath(Directory, File):
             must exist, otherwise raise `SystemPathNotFoundError` (or other).
             The default is False.
         """
-        super().__init__(root, autoabs=autoabs, strict =strict)
+        super().__init__(root, autoabs=autoabs, strict=strict)
 
 
 class _xe6_xad_x8c_xe7_x90_xaa_xe6_x80_xa1_xe7_x8e_xb2_xe8_x90_x8d_xe4_xba_x91:
