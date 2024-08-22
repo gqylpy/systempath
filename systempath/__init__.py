@@ -24,7 +24,7 @@ business logic rather than the intricacies of low-level file system operations.
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
-    @version: 1.1.5
+    @version: 1.2alpha1
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -45,12 +45,16 @@ import sys
 import typing
 
 from typing import (
-    Type, TypeVar, Literal, Optional, Union, Tuple, List, BinaryIO, TextIO,
-    Callable, Iterator
+    Type, TypeVar, Literal, Optional, Union, Dict, Tuple, List, Mapping,
+    BinaryIO, TextIO, Callable, Sequence, Iterator, Iterable, Any
 )
 
 if typing.TYPE_CHECKING:
+    import csv
+    import json
+    import yaml
     from _typeshed import SupportsWrite
+    from configparser import ConfigParser, Interpolation
 
 if sys.version_info >= (3, 10):
     from typing import TypeAlias
@@ -73,6 +77,21 @@ CopyFunction:   TypeAlias = Callable[[PathLink, PathLink], None]
 CopyTreeIgnore: TypeAlias = \
     Callable[[PathLink, List[BytesOrStr]], List[BytesOrStr]]
 
+ConvertersMap:       TypeAlias = Dict[str, Callable[[str], Any]]
+CSVDialectLike:      TypeAlias = Union[str, 'csv.Dialect', Type['csv.Dialect']]
+JsonObjectHook:      TypeAlias = Callable[[Dict[Any, Any]], Any]
+JsonObjectParse:     TypeAlias = Callable[[str], Any]
+JsonObjectPairsHook: TypeAlias = Callable[[List[Tuple[Any, Any]]], Any]
+YamlDumpStyle:       TypeAlias = Literal['|', '>', '|+', '>+']
+
+YamlLoader: TypeAlias = Union[
+    Type['yaml.BaseLoader'], Type['yaml.Loader'], Type['yaml.FullLoader'],
+    Type['yaml.SafeLoader'], Type['yaml.UnsafeLoader']
+]
+YamlDumper: TypeAlias = Union[
+    Type['yaml.BaseDumper'], Type['yaml.Dumper'], Type['yaml.SafeDumper']
+]
+
 try:
     import exceptionx as ex
 except ModuleNotFoundError:
@@ -84,6 +103,20 @@ else:
     NotAFileError:            Type[ex.Error] = ex.NotAFileError
     NotADirectoryOrFileError: Type[ex.Error] = ex.NotADirectoryOrFileError
     IsSameFileError:          Type[ex.Error] = ex.IsSameFileError
+
+
+class CSVReader(Iterator[List[str]]):
+    line_num: int
+    @property
+    def dialect(self) -> 'csv.Dialect': ...
+    def __next__(self) -> List[str]: ...
+
+
+class CSVWriter:
+    @property
+    def dialect(self) -> 'csv.Dialect': ...
+    def writerow(self, row: Iterable[Any]) -> Any: ...
+    def writerows(self, rows: Iterable[Iterable[Any]]) -> None: ...
 
 
 class Path:
@@ -163,6 +196,9 @@ class Path:
         """Return True if the absolute path of the path instance is equal to the
         absolute path of another path instance (can also be a path link
         character) else False."""
+
+    def __len__(self) -> int:
+        """Return the length of the path string (or bytes)."""
 
     def __bool__(self) -> bool:
         return self.exists
@@ -1117,6 +1153,22 @@ class File(Path):
     def open(self) -> 'Open':
         return Open(self)
 
+    @property
+    def ini(self) -> 'INI':
+        return INI(self)
+
+    @property
+    def csv(self) -> 'CSV':
+        return CSV(self)
+
+    @property
+    def json(self) -> 'JSON':
+        return JSON(self)
+
+    @property
+    def yaml(self) -> 'YAML':
+        return YAML(self)
+
     content = property(
         lambda self         : self.contents.read(),
         lambda self, content: self.contents.overwrite(content),
@@ -1203,12 +1255,6 @@ class File(Path):
         @return: The parameter `dst` is passed in, without any modification.
         """
 
-    def truncate(self, length: int) -> None:
-        os.truncate(self, length)
-
-    def clear(self) -> None:
-        self.truncate(0)
-
     def mknod(
             self,
             mode: Optional[int] = None,
@@ -1248,6 +1294,32 @@ class File(Path):
         self.dirname.makedirs(mode, exist_ok=True)
         self.mknod(mode, device=device, ignore_exists=ignore_exists)
 
+    def create(
+            self,
+            mode: Optional[int] = None,
+            *,
+            device: Optional[int] = None,
+            ignore_exists: Optional[bool] = None
+    ):
+        warnings.warn(
+            f'will be deprecated soon, replaced to {self.mknod}.',
+            DeprecationWarning
+        )
+        self.mknod(mode, device=device, ignore_exists=ignore_exists)
+
+    def creates(
+            self,
+            mode: Optional[int] = None,
+            *,
+            device: Optional[int] = None,
+            ignore_exists: Optional[bool] = None
+    ) -> None:
+        warnings.warn(
+            f'will be deprecated soon, replaced to {self.mknods}.',
+            DeprecationWarning
+        )
+        self.mknods(mode, device=device, ignore_exists=ignore_exists)
+
     def remove(self, *, ignore_errors: Optional[bool] = None) -> None:
         """
         Remove the file, call `os.remove` internally.
@@ -1261,19 +1333,43 @@ class File(Path):
     def unlink(self) -> None:
         """Remove the file, like `self.remove`, call `os.unlink` internally."""
 
-    def read(self, size: Optional[int] = None, /) -> bytes:
+    def contains(self, subcontent: bytes, /) -> bool:
+        return self.contents.contains(subcontent)
+
+    def truncate(self, length: int) -> None:
+        self.contents.truncate(length)
+
+    def clear(self) -> None:
+        self.contents.clear()
+
+    def md5(self, salting: Optional[bytes] = None) -> str:
+        return self.contents.md5(salting)
+
+    def read(
+            self,
+            size: Optional[int] = None,
+            /, *,
+            encoding: Optional[str] = None
+    ) -> str:
         warnings.warn(
             f'deprecated, replaced to {self.content} or {self.contents.read}.',
             DeprecationWarning
         )
-        return self.contents.read(size)
+        return self.open.r(encoding=encoding).read(size)
 
-    def write(self, content: bytes, /) -> int:
+    def write(self, content: str, /, *, encoding: Optional[str] = None) -> int:
         warnings.warn(
             f'deprecated, replaced to {self.content} or {self.contents.write}.',
             DeprecationWarning
         )
-        return self.contents.write(content)
+        return self.open.w(encoding=encoding).write(content)
+
+    def append(self, content: str, /, *, encoding: Optional[str] = None) -> int:
+        warnings.warn(
+            f'deprecated, replaced to {self.contents.append}.',
+            DeprecationWarning
+        )
+        return self.open.a(encoding=encoding).write(content)
 
 
 class Open:
@@ -1645,6 +1741,9 @@ class Content:
     def clear(self) -> None:
         self.truncate(0)
 
+    def md5(self, salting: Optional[bytes] = None) -> str:
+        """Return the md5 string of the file content."""
+
 
 def tree(
         dirpath:   Optional[PathLink] = None,
@@ -1687,6 +1786,453 @@ def tree(
         Yield short path link string, delete the `dirpath` from the left end of
         the path, used with the parameter `pure_path`. The default is False.
     """
+
+
+class INI:
+    """
+    Class to read and parse INI file.
+
+    @param encoding
+        The encoding used to read files is usually specified as "UTF-8". The
+        default encoding is platform-based, and
+        `locale.getpreferredencoding(False)` is called to obtain the current
+        locale encoding. For a list of supported encodings, please refer to the
+        `codecs` module.
+
+    @param defaults
+        A dictionary containing default key-value pairs to use if some options
+        are missing in the parsed configuration file.
+
+    @param dict_type
+        The type used to represent the returned dictionary. The default is
+        `dict`, which means that sections and options in the configuration will
+        be preserved in the order they appear in the file.
+
+    @param allow_no_value
+        A boolean specifying whether options without values are allowed. If set
+        to True, lines like `key=` will be accepted and the value of key will be
+        set to None.
+
+    @param delimiters
+        A sequence of characters used to separate keys and values. The default
+        is `("=", ":")`, which means both "=" and ":" can be used as delimiters.
+
+    @param comment_prefixes
+        A sequence of prefixes used to identify comment lines. The default is
+        `("#", ";")`, which means lines starting with "#" or ";" will be
+        considered comments.
+
+    @param inline_comment_prefixes
+        A sequence of prefixes used to identify inline comments. The default is
+        None, which means inline comments are not supported.
+
+    @param strict
+        A boolean specifying whether to parse strictly. If set to True, the
+        parser will report syntax errors, such as missing sections or incorrect
+        delimiters.
+
+    @param empty_lines_in_values
+        A boolean specifying whether empty lines within values are allowed. If
+        set to True, values can span multiple lines, and empty lines will be
+        preserved.
+
+    @param default_section
+        The name of the default section in the configuration file is "DEFAULT"
+        by default. If specified, any options that do not belong to any section
+        during parsing will be added to this default section.
+
+    @param interpolation
+        Specifies the interpolation type. Interpolation is a substitution
+        mechanism that allows values in the configuration file to reference
+        other values. Supports `configparser.BasicInterpolation` and
+        `configparser.ExtendedInterpolation`.
+
+    @param converters
+        A dictionary containing custom conversion functions used to convert
+        string values from the configuration file to other types. The keys are
+        the names of the conversion functions, and the values are the
+        corresponding conversion functions.
+    """
+
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def read(
+            self,
+            encoding:                Optional[str]                     = None,
+            *,
+            defaults:                Optional[Mapping[str, str]]       = None,
+            dict_type:               Optional[Type[Mapping[str, str]]] = None,
+            allow_no_value:          Optional[bool]                    = None,
+            delimiters:              Optional[Sequence[str]]           = None,
+            comment_prefixes:        Optional[Sequence[str]]           = None,
+            inline_comment_prefixes: Optional[Sequence[str]]           = None,
+            strict:                  Optional[bool]                    = None,
+            empty_lines_in_values:   Optional[bool]                    = None,
+            default_section:         Optional[str]                     = None,
+            interpolation:           Optional['Interpolation']         = None,
+            converters:              Optional[ConvertersMap]           = None
+    ) -> 'ConfigParser': ...
+
+
+class CSV:
+    """
+    A class to handle CSV file reading and writing operations.
+
+    @param dialect:
+        The dialect to use for the CSV file format. A dialect is a set of
+        specific parameters that define the format of a CSV file, such as the
+        delimiter, quote character, etc. "excel" is a commonly used default
+        dialect that uses a comma as the delimiter and a double quote as the
+        quote character.
+
+    @param mode
+        The mode to open the file, only "w" or "a" are supported. The default is
+        "w".
+
+    @param encoding
+        Specify the output encoding, usually specified as "UTF-8". The default
+        encoding is based on the platform, call
+        `locale.getpreferredencoding(False)` to get the current locale encoding.
+        See the `codecs` module for a list of supported encodings.
+
+    @param delimiter:
+        The character used to separate fields. The default in the "excel"
+        dialect is a comma.
+
+    @param quotechar:
+        The character used to quote fields. The default in the "excel" dialect
+        is a double quote.
+
+    @param escapechar:
+        The character used to escape field content, default is None. If a field
+        contains the delimiter or quote character, the escape character can be
+        used to avoid ambiguity.
+
+    @param doublequote:
+        If True (the default), quote characters in fields will be doubled. For
+        example, "Hello, World" will be written as \"""Hello, World\""".
+
+    @param skipinitialspace:
+        If True, whitespace immediately following the delimiter is ignored. The
+        default is False.
+
+    @param lineterminator:
+        The string used to terminate lines. The default is "\r\n", i.e.,
+        carriage return plus line feed.
+
+    @param quoting:
+        Controls when quotes should be generated by the writer and recognized by
+        the reader. It can be any of the following values:
+            0: Indicates that quotes should only be used when necessary (for
+               example, when the field contains the delimiter or quote
+               character);
+            1: Indicates that quotes should always be used;
+            2: Indicates that quotes should never be used;
+            3: Indicates that double quotes should always be used.
+
+    @param strict:
+        If True, raise errors for CSV format anomalies (such as extra quote
+        characters). The default is False, which does not raise errors.
+    """
+
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def reader(
+            self,
+            dialect:          Optional[CSVDialectLike] = None,
+            *,
+            delimiter:        Optional[str]            = None,
+            quotechar:        Optional[str]            = None,
+            escapechar:       Optional[str]            = None,
+            doublequote:      Optional[bool]           = None,
+            skipinitialspace: Optional[bool]           = None,
+            lineterminator:   Optional[str]            = None,
+            quoting:          Optional[int]            = None,
+            strict:           Optional[bool]           = None
+    ) -> CSVReader: ...
+
+    def writer(
+            self,
+            dialect:          Optional[CSVDialectLike]    = None,
+            *,
+            mode:             Optional[Literal['w', 'a']] = None,
+            encoding:         Optional[str]               = None,
+            delimiter:        Optional[str]               = None,
+            quotechar:        Optional[str]               = None,
+            escapechar:       Optional[str]               = None,
+            doublequote:      Optional[bool]              = None,
+            skipinitialspace: Optional[bool]              = None,
+            lineterminator:   Optional[str]               = None,
+            quoting:          Optional[int]               = None,
+            strict:           Optional[bool]              = None
+    ) -> CSVWriter: ...
+
+
+class JSON:
+    """
+    A class for handling JSON operations with a file object. It provides
+    methods for loading JSON data from a file and dumping Python objects into a
+    file as JSON.
+
+    @param cls
+        Pass a class used for decoding or encoding JSON data. By default,
+        `json.JSONDecoder` is used for decoding (`self.load`), and
+        `json.JSONEncoder` is used for encoding (`self.dump`). You can
+        customize the decoding or encoding process by inheriting from these
+        two classes and overriding their methods.
+
+    @param object_hook
+        This function will be used to decode dictionaries. It takes a dictionary
+        as input, allows you to modify the dictionary or convert it to another
+        type of object, and then returns it. This allows you to customize the
+        data structure immediately after parsing JSON.
+
+    @param parse_float
+        This function will be used to decode floating-point numbers in JSON. By
+        default, floating-point numbers are parsed into Python's float type. You
+        can change this behavior by providing a custom function.
+
+    @param parse_int
+        This function will be used to decode integers in JSON. By default,
+        integers are parsed into Python's int type. You can change this behavior
+        by providing a custom function.
+
+    @param parse_constant
+        This function will be used to decode special constants in JSON (such as
+        `Infinity`, `NaN`). By default, these constants are parsed into Python's
+        `float("inf")` and `float("nan")`. You can change this behavior by
+        providing a custom function.
+
+    @param object_pairs_hook
+        This function will be used to decode JSON objects. It takes a list of
+        key-value pairs as input, allows you to convert these key-value pairs
+        into another type of object, and then returns it. For example, you can
+        use it to convert JSON objects to `gqylpy_dict.gdict`, which supports
+        accessing and modifying key-value pairs in the dictionary using the dot
+        operator.
+
+    @param obj
+        The Python object you want to convert to JSON format and write to the
+        file.
+
+    @param skipkeys
+        If True (default is False), dictionary keys that are not of a basic
+        type (str, int, float, bool, None) will be skipped during the encoding
+        process.
+
+    @param ensure_ascii
+        If True (default), all non-ASCII characters in the output will be
+        escaped. If False, these characters will be output as-is.
+
+    @param check_circular
+        If True (default), the function will check for circular references in
+        the object and raise a `ValueError` if found. If False, no such check
+        will be performed.
+
+    @param allow_nan
+        If True (default), `NaN`, `Infinity`, and `-Infinity` will be encoded as
+        JSON. If False, these values will raise a `ValueError`.
+
+    @param indent
+        Specifies the number of spaces for indentation for prettier output. If
+        None (default), the most compact representation will be used.
+
+    @param separators
+        A `(item_separator, key_separator)` tuple used to specify separators.
+        The default separators are `(", ", ": ")`. If the `indent` parameter is
+        specified, this parameter will be ignored.
+
+    @param default
+        A function that will be used to convert objects that cannot be
+        serialized. This function should take an object as input and return a
+        serializable version.
+
+    @param sort_keys
+        If True (default is False), the output of dictionaries will be sorted by
+        key order.
+    """
+
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def load(
+            self,
+            *,
+            cls:               Optional[Type['json.JSONDecoder']] = None,
+            object_hook:       Optional[JsonObjectHook]           = None,
+            parse_float:       Optional[JsonObjectParse]          = None,
+            parse_int:         Optional[JsonObjectParse]          = None,
+            parse_constant:    Optional[JsonObjectParse]          = None,
+            object_pairs_hook: Optional[JsonObjectPairsHook]      = None
+    ) -> Any: ...
+
+    def dump(
+            self,
+            obj:            Any,
+            *,
+            skipkeys:       Optional[bool]                     = None,
+            ensure_ascii:   Optional[bool]                     = None,
+            check_circular: Optional[bool]                     = None,
+            allow_nan:      Optional[bool]                     = None,
+            cls:            Optional[Type['json.JSONEncoder']] = None,
+            indent:         Optional[Union[int, str]]          = None,
+            separators:     Optional[Tuple[str, str]]          = None,
+            default:        Optional[Callable[[Any], Any]]     = None,
+            sort_keys:      Optional[bool]                     = None,
+            **kw
+    ) -> None: ...
+
+
+class YAML:
+    """
+    A class for handling YAML operations with a file object. It provides
+    methods for loading YAML data from a file and dumping Python objects into a
+    file as YAML.
+
+    @param loader
+        Specify a loader class to control how the YAML stream is parsed.
+        Defaults to `yaml.SafeLoader`. The YAML library provides different
+        loaders, each with specific uses and security considerations.
+
+        `yaml.FullLoader`:
+            This is the default loader that can load the full range of YAML
+            functionality, including arbitrary Python objects. However, due to
+            its ability to load arbitrary Python objects, it may pose a security
+            risk as it can load and execute arbitrary Python code.
+
+        `yaml.SafeLoader`:
+            This loader is safe, allowing only simple YAML tags to be loaded,
+            preventing the execution of arbitrary Python code. It is suitable
+            for loading untrusted or unknown YAML content.
+
+        `yaml.Loader` & `yaml.UnsafeLoader`:
+            These loaders are similar to `FullLoader` but provide fewer security
+            guarantees. They allow loading of nearly all YAML tags, including
+            some that may execute arbitrary code.
+
+        Through this parameter, you can choose which loader to use to balance
+        functionality and security. For example, if you are loading a fully
+        trusted YAML file and need to use the full range of YAML functionality,
+        you can choose `yaml.FullLoader`. If you are loading an unknown or not
+        fully trusted YAML file, you should choose `yaml.SafeLoader` to avoid
+        potential security risks.
+
+    @param documents
+        A list of Python objects to serialize as YAML. Each object will be
+        serialized as a YAML document.
+
+    @param dumper
+        An instance of a Dumper class used to serialize documents. If not
+        specified, the default `yaml.Dumper` class will be used.
+
+    @param default_style
+        Used to define the style for strings in the output, default is None.
+        Options include ("|", ">", "|+", ">+"). Where "|" is used for literal
+        style and ">" is used for folded style.
+
+    @param default_flow_style
+        A boolean value, default is False, specifying whether to use flow style
+        by default. Flow style is a compact representation that does not use the
+        traditional YAML block style for mappings and lists.
+
+    @param canonical
+        A boolean value specifying whether to output canonical YAML. Canonical
+        YAML output is unique and does not depend on the Python object's
+        representation.
+
+    @param indent
+        Used to specify the indentation level for block sequences and mappings.
+        The default is 2.
+
+    @param width
+        Used to specify the width for folded styles. The default is 80.
+
+    @param allow_unicode
+        A boolean value specifying whether Unicode characters are allowed in the
+        output.
+
+    @param line_break
+        Specifies the line break character used in block styles. Can be None,
+        "\n", "\r", or "\r\n".
+
+    @param encoding
+        Specify the output encoding, usually specified as "UTF-8". The default
+        encoding is based on the platform, call
+        `locale.getpreferredencoding(False)` to get the current locale encoding.
+        See the `codecs` module for a list of supported encodings.
+
+    @param explicit_start
+        A boolean value specifying whether to include a YAML directive (`%YAML`)
+        in the output.
+
+    @param explicit_end
+        A boolean value specifying whether to include an explicit document end
+        marker (...) in the output.
+
+    @param version
+        Used to specify the YAML version as a tuple. Can be, for example,
+        `(1, 0)`, `(1, 1)`, or `(1, 2)`.
+
+    @param tags
+        A dictionary used to map Python types to YAML tags
+
+    @param sort_keys
+        A boolean value specifying whether to sort the keys of mappings in the
+        output. The default is True.
+    """
+
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def load(self, loader: Optional['YamlLoader'] = None) -> Any: ...
+
+    def load_all(
+            self, loader: Optional['YamlLoader'] = None
+    ) -> Iterator[Any]: ...
+
+    def dump(
+            self,
+            data: Any,
+            /,
+            dumper:             Optional['YamlDumper']      = None,
+            *,
+            default_style:      Optional[str]               = None,
+            default_flow_style: Optional[bool]              = None,
+            canonical:          Optional[bool]              = None,
+            indent:             Optional[int]               = None,
+            width:              Optional[int]               = None,
+            allow_unicode:      Optional[bool]              = None,
+            line_break:         Optional[str]               = None,
+            encoding:           Optional[str]               = None,
+            explicit_start:     Optional[bool]              = None,
+            explicit_end:       Optional[bool]              = None,
+            version:            Optional[Tuple[int, int]]   = None,
+            tags:               Optional[Mapping[str, str]] = None,
+            sort_keys:          Optional[bool]              = None
+    ) -> None: ...
+
+    def dump_all(
+            self,
+            documents:          Iterable[Any],
+            /,
+            dumper:             Optional['YamlLoader']      = None,
+            *,
+            default_style:      Optional[YamlDumpStyle]     = None,
+            default_flow_style: Optional[bool]              = None,
+            canonical:          Optional[bool]              = None,
+            indent:             Optional[int]               = None,
+            width:              Optional[int]               = None,
+            allow_unicode:      Optional[bool]              = None,
+            line_break:         Optional[FileNewline]       = None,
+            encoding:           Optional[str]               = None,
+            explicit_start:     Optional[bool]              = None,
+            explicit_end:       Optional[bool]              = None,
+            version:            Optional[Tuple[int, int]]   = None,
+            tags:               Optional[Mapping[str, str]] = None,
+            sort_keys:          Optional[bool]              = None
+    ) -> None: ...
 
 
 class SystemPath(Directory, File):
