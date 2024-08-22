@@ -32,6 +32,7 @@ setuptools.setup(
     packages=[i.__name__],
     python_requires='>=3.8',
     install_requires=[x.decode() for x in requires_file if x],
+    extras_require={'pyyaml': ['PyYAML>=6.0,<7.0'],},
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',

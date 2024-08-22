@@ -14,12 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 import sys
+import csv
+import json
 import typing
+import hashlib
 import builtins
 import warnings
 import functools
 
 from copy import copy, deepcopy
+from configparser import ConfigParser
 
 from os import (
     stat,    lstat,   stat_result,
@@ -80,15 +84,14 @@ from _io import (
     DEFAULT_BUFFER_SIZE
 )
 
-from hashlib import md5
-
 from typing import (
-    TypeVar, Type, Literal, Optional, Union, Tuple, List, Final, Callable,
-    Iterator, Iterable, NoReturn, Any
+    TypeVar, Type, Final, Literal, Optional, Union, Dict, Tuple, List, Mapping,
+    Callable, Iterator, Iterable, Sequence, NoReturn, Any
 )
 
 if typing.TYPE_CHECKING:
     from _typeshed import SupportsWrite
+    from configparser import Interpolation
 
 if sys.version_info >= (3, 9):
     from typing import Annotated
@@ -108,6 +111,24 @@ if sys.version_info >= (3, 11):
 else:
     Self = TypeVar('Self')
 
+try:
+    import yaml
+except ModuleNotFoundError:
+    yaml = None
+else:
+    YamlLoader: TypeAlias = Union[
+        Type[yaml.BaseLoader],
+        Type[yaml.Loader],
+        Type[yaml.FullLoader],
+        Type[yaml.SafeLoader],
+        Type[yaml.UnsafeLoader]
+    ]
+    YamlDumper: TypeAlias = Union[
+        Type[yaml.BaseDumper],
+        Type[yaml.Dumper],
+        Type[yaml.SafeDumper]
+    ]
+
 if basename(sys.argv[0]) != 'setup.py':
     import exceptionx as ex
 
@@ -118,6 +139,14 @@ Closure:        TypeAlias = TypeVar('Closure', bound=Callable)
 CopyFunction:   TypeAlias = Callable[[PathLink, PathLink], None]
 CopyTreeIgnore: TypeAlias = \
     Callable[[PathLink, List[BytesOrStr]], List[BytesOrStr]]
+
+ConvertersMap:       TypeAlias = Dict[str, Callable[[str], Any]]
+CSVDialectLike:      TypeAlias = Union[str, csv.Dialect, Type[csv.Dialect]]
+JsonObjectHook:      TypeAlias = Callable[[Dict[Any, Any]], Any]
+JsonObjectParse:     TypeAlias = Callable[[str], Any]
+JsonObjectPairsHook: TypeAlias = Callable[[List[Tuple[Any, Any]]], Any]
+FileNewline:         TypeAlias = Literal['', '\n', '\r', '\r\n']
+YamlDumpStyle:       TypeAlias = Literal['|', '>', '|+', '>+']
 
 OpenMode: TypeAlias = Annotated[Literal[
     'rb', 'rb_plus', 'rt', 'rt_plus', 'r', 'r_plus',
@@ -135,6 +164,21 @@ EncodingErrorHandlingMode: TypeAlias = Annotated[Literal[
     'backslashreplace',
     'namereplace'
 ], 'The error handling modes for encoding and decoding (strictness).']
+
+
+class CSVReader(Iterator[List[str]]):
+    line_num: int
+    @property
+    def dialect(self) -> csv.Dialect: ...
+    def __next__(self) -> List[str]: ...
+
+
+class CSVWriter:
+    @property
+    def dialect(self) -> csv.Dialect: ...
+    def writerow(self, row: Iterable[Any]) -> Any: ...
+    def writerows(self, rows: Iterable[Iterable[Any]]) -> None: ...
+
 
 UNIQUE: Final[Annotated[object, 'A unique object.']] = object()
 
@@ -378,6 +422,9 @@ class Path(ReadOnly):
             self.__class__ in (Path, SystemPath),
             other_type     in (Path, SystemPath)
         )) and abspath(self) == other_path and self.dir_fd == other_dir_fd
+
+    def __len__(self) -> int:
+        return len(self.name)
 
     def __bool__(self) -> bool:
         return self.exists
@@ -1002,7 +1049,7 @@ class File(Path):
         return self.isfile
 
     def __contains__(self, subcontent: bytes, /) -> bool:
-        return subcontent in Content(self)
+        return Content(self).contains(subcontent)
 
     def __iter__(self) -> Iterator[bytes]:
         yield from Content(self)
@@ -1017,6 +1064,22 @@ class File(Path):
     @property
     def open(self) -> 'Open':
         return Open(self)
+
+    @property
+    def ini(self) -> 'INI':
+        return INI(self)
+
+    @property
+    def csv(self) -> 'CSV':
+        return CSV(self)
+
+    @property
+    def json(self) -> 'JSON':
+        return JSON(self)
+
+    @property
+    def yaml(self) -> 'YAML':
+        return YAML(self)
 
     @property
     def content(self) -> bytes:
@@ -1086,12 +1149,6 @@ class File(Path):
     def isempty(self) -> bool:
         return not bool(getsize(self))
 
-    def truncate(self, length: int) -> None:
-        truncate(self, length)
-
-    def clear(self) -> None:
-        truncate(self, 0)
-
     if sys.platform == 'win32':
         def mknod(
                 self,
@@ -1143,23 +1200,35 @@ class File(Path):
     def unlink(self) -> None:
         unlink(self, dir_fd=self.dir_fd)
 
+    def contains(self, subcontent: bytes, /) -> bool:
+        return Content(self).contains(subcontent)
+
+    def truncate(self, length: int) -> None:
+        truncate(self, length)
+
+    def clear(self) -> None:
+        truncate(self, 0)
+
     def md5(self, salting: bytes = b'') -> str:
-        m5 = md5(salting)
-        read = FileIO(self).read
+        return Content(self).md5(salting)
 
-        while True:
-            content = read(READ_BUFSIZE)
-            if not content:
-                break
-            m5.update(content)
+    def read(
+            self, size: int = -1, /, *, encoding: Optional[str] = None, **kw
+    ) -> str:
+        return Open(self).r(encoding=encoding, **kw).read(size)
 
-        return m5.hexdigest()
+    def write(
+            self, content: str, /, *, encoding: Optional[str] = None, **kw
+    ) -> int:
+        return Open(self).w().write(content, **kw)
 
-    def read(self, size: int = -1, /) -> bytes:
-        return FileIO(self).read(size)
+    def append(
+            self, content: str, /, *, encoding: Optional[str] = None, **kw
+    ) -> int:
+        return Open(self).a().write(content, **kw)
 
-    def write(self, content: bytes, /) -> int:
-        return Content(self).write(content)
+    create = mknod
+    creates = mknods
 
 
 class Open(ReadOnly):
@@ -1186,7 +1255,7 @@ class Open(ReadOnly):
             )
         self.file = file
 
-    def __getattr__(self, mode: OpenMode) -> Closure:
+    def __getattr__(self, mode: OpenMode, /) -> Closure:
         try:
             buffer: Type[BufferedIOBase] = Open.__modes__[mode]
         except KeyError:
@@ -1331,9 +1400,6 @@ class Content(Open):
             )
         return count
 
-    def overwrite(self, content: Union['Content', bytes], /) -> int:
-        return self.write(content)
-
     def append(self, content: Union['Content', bytes], /) -> int:
         if isinstance(content, Content):
             read, write, count = content.rb().read, self.ab().write, 0
@@ -1391,16 +1457,18 @@ class Content(Open):
         truncate(self.file, 0)
 
     def md5(self, salting: bytes = b'') -> str:
-        m5 = md5(salting)
+        md5 = hashlib.md5(salting)
         read = self.rb().read
 
         while True:
             content = read(READ_BUFSIZE)
             if not content:
                 break
-            m5.update(content)
+            md5.update(content)
 
-        return m5.hexdigest()
+        return md5.hexdigest()
+
+    overwrite = write
 
 
 class tree:
@@ -1497,6 +1565,256 @@ class tree:
         if path[0] in (47, 92, '/', '\\'):
             path: PathLink = path[1:]
         return path
+
+
+class INI:
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def read(
+            self,
+            encoding:                Optional[str]               = None,
+            *,
+            defaults:                Optional[Mapping[str, str]] = None,
+            dict_type:               Type[Mapping[str, str]]     = dict,
+            allow_no_value:          bool                        = False,
+            delimiters:              Sequence[str]               = ('=', ':'),
+            comment_prefixes:        Sequence[str]               = ('#', ';'),
+            inline_comment_prefixes: Optional[Sequence[str]]     = None,
+            strict:                  bool                        = True,
+            empty_lines_in_values:   bool                        = True,
+            default_section:         str                         = 'DEFAULT',
+            interpolation:           Optional['Interpolation']   = None,
+            converters:              Optional[ConvertersMap]     = None
+    ) -> ConfigParser:
+        kw = {}
+        if interpolation is not None:
+            kw['interpolation'] = interpolation
+        if converters is not None:
+            kw['converters'] = converters
+        config = ConfigParser(
+            defaults               =defaults,
+            dict_type              =dict_type,
+            allow_no_value         =allow_no_value,
+            delimiters             =delimiters,
+            comment_prefixes       =comment_prefixes,
+            inline_comment_prefixes=inline_comment_prefixes,
+            strict                 =strict,
+            empty_lines_in_values  =empty_lines_in_values,
+            default_section        =default_section,
+            **kw
+        )
+        config.read(self.file, encoding=encoding)
+        return config
+
+
+class CSV:
+
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def reader(
+            self,
+            dialect:          CSVDialectLike = 'excel',
+            *,
+            delimiter:        str            = ',',
+            quotechar:        Optional[str]  = '"',
+            escapechar:       Optional[str]  = None,
+            doublequote:      bool           = True,
+            skipinitialspace: bool           = False,
+            lineterminator:   str            = '\r\n',
+            quoting:          int            = 0,
+            strict:           bool           = False
+    ) -> CSVReader:
+        return csv.reader(
+            Open(self.file).r(newline=''), dialect,
+            delimiter       =delimiter,
+            quotechar       =quotechar,
+            escapechar      =escapechar,
+            doublequote     =doublequote,
+            skipinitialspace=skipinitialspace,
+            lineterminator  =lineterminator,
+            quoting         =quoting,
+            strict          =strict
+        )
+
+    def writer(
+            self,
+            dialect:          CSVDialectLike    = 'excel',
+            *,
+            mode:             Literal['w', 'a'] = 'w',
+            encoding:         Optional[str]     = None,
+            delimiter:        str               = ',',
+            quotechar:        Optional[str]     = '"',
+            escapechar:       Optional[str]     = None,
+            doublequote:      bool              = True,
+            skipinitialspace: bool              = False,
+            lineterminator:   str               = '\r\n',
+            quoting:          int               = 0,
+            strict:           bool              = False
+    ) -> CSVWriter:
+        if mode not in ('w', 'a'):
+            raise ex.ParameterError(
+                f'parameter "mode" must be "w" or "a", not {mode!r}.'
+            )
+        return csv.writer(
+            getattr(Open(self.file), mode)(encoding=encoding, newline=''),
+            dialect,
+            delimiter       =delimiter,
+            quotechar       =quotechar,
+            escapechar      =escapechar,
+            doublequote     =doublequote,
+            skipinitialspace=skipinitialspace,
+            lineterminator  =lineterminator,
+            quoting         =quoting,
+            strict          =strict
+        )
+
+
+class JSON:
+
+    def __init__(self, file: File, /):
+        self.file = file
+
+    def load(
+            self,
+            *,
+            cls:               Type[json.JSONDecoder]        = json.JSONDecoder,
+            object_hook:       Optional[JsonObjectHook]      = None,
+            parse_float:       Optional[JsonObjectParse]     = None,
+            parse_int:         Optional[JsonObjectParse]     = None,
+            parse_constant:    Optional[JsonObjectParse]     = None,
+            object_pairs_hook: Optional[JsonObjectPairsHook] = None
+    ) -> Any:
+        return json.loads(
+            self.file.content,
+            cls              =cls,
+            object_hook      =object_hook,
+            parse_float      =parse_float,
+            parse_int        =parse_int,
+            parse_constant   =parse_constant,
+            object_pairs_hook=object_pairs_hook
+        )
+
+    def dump(
+            self,
+            obj:            Any,
+            *,
+            skipkeys:       bool                           = False,
+            ensure_ascii:   bool                           = True,
+            check_circular: bool                           = True,
+            allow_nan:      bool                           = True,
+            cls:            Type[json.JSONEncoder]         = json.JSONEncoder,
+            indent:         Optional[Union[int, str]]      = None,
+            separators:     Optional[Tuple[str, str]]      = None,
+            default:        Optional[Callable[[Any], Any]] = None,
+            sort_keys:      bool                           = False,
+            **kw
+    ) -> None:
+        return json.dump(
+            obj, Open(self.file).w(),
+            skipkeys      =skipkeys,
+            ensure_ascii  =ensure_ascii,
+            check_circular=check_circular,
+            allow_nan     =allow_nan,
+            cls           =cls,
+            indent        =indent,
+            separators    =separators,
+            default       =default,
+            sort_keys     =sort_keys,
+            **kw
+        )
+
+
+class YAML:
+
+    def __init__(self, file: File, /):
+        if yaml is None:
+            raise ModuleNotFoundError(
+                'dependency has not been installed, '
+                'run `pip3 install systempath[pyyaml]`.'
+            )
+        self.file = file
+
+    def load(self, loader: Optional['YamlLoader'] = None) -> Any:
+        return yaml.load(FileIO(self.file), loader or yaml.SafeLoader)
+
+    def load_all(self, loader: Optional['YamlLoader'] = None) -> Iterator[Any]:
+        return yaml.load_all(FileIO(self.file), loader or yaml.SafeLoader)
+
+    def dump(
+            self,
+            data:               Any,
+            /,
+            dumper:             Optional['YamlDumper']      = None,
+            *,
+            default_style:      Optional[str]               = None,
+            default_flow_style: bool                        = False,
+            canonical:          Optional[bool]              = None,
+            indent:             Optional[int]               = None,
+            width:              Optional[int]               = None,
+            allow_unicode:      Optional[bool]              = None,
+            line_break:         Optional[str]               = None,
+            encoding:           Optional[str]               = None,
+            explicit_start:     Optional[bool]              = None,
+            explicit_end:       Optional[bool]              = None,
+            version:            Optional[Tuple[int, int]]   = None,
+            tags:               Optional[Mapping[str, str]] = None,
+            sort_keys:          bool                        = True
+    ) -> None:
+        return yaml.dump_all(
+            [data], Open(self.file).w(), dumper or yaml.Dumper,
+            default_style     =default_style,
+            default_flow_style=default_flow_style,
+            canonical         =canonical,
+            indent            =indent,
+            width             =width,
+            allow_unicode     =allow_unicode,
+            line_break        =line_break,
+            encoding          =encoding,
+            explicit_start    =explicit_start,
+            explicit_end      =explicit_end,
+            version           =version,
+            tags              =tags,
+            sort_keys         =sort_keys
+        )
+
+    def dump_all(
+            self,
+            documents:          Iterable[Any],
+            /,
+            dumper:             Optional['YamlLoader']      = None,
+            *,
+            default_style:      Optional[YamlDumpStyle]     = None,
+            default_flow_style: bool                        = False,
+            canonical:          Optional[bool]              = None,
+            indent:             Optional[int]               = None,
+            width:              Optional[int]               = None,
+            allow_unicode:      Optional[bool]              = None,
+            line_break:         Optional[FileNewline]       = None,
+            encoding:           Optional[str]               = None,
+            explicit_start:     Optional[bool]              = None,
+            explicit_end:       Optional[bool]              = None,
+            version:            Optional[Tuple[int, int]]   = None,
+            tags:               Optional[Mapping[str, str]] = None,
+            sort_keys:          bool                        = True
+    ) -> None:
+        return yaml.dump_all(
+            documents, Open(self.file).w(), dumper or yaml.Dumper,
+            default_style     =default_style,
+            default_flow_style=default_flow_style,
+            canonical         =canonical,
+            indent            =indent,
+            width             =width,
+            allow_unicode     =allow_unicode,
+            line_break        =line_break,
+            encoding          =encoding,
+            explicit_start    =explicit_start,
+            explicit_end      =explicit_end,
+            version           =version,
+            tags              =tags,
+            sort_keys         =sort_keys
+        )
 
 
 class SystemPath(Directory, File):
