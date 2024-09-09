@@ -1262,7 +1262,7 @@ class Open(ReadOnly):
             raise AttributeError(
                 f"'{self.__class__.__name__}' object has no attribute '{mode}'"
             ) from None
-        return self.__pass__(buffer, mode)
+        return self.__open__(buffer, mode)
 
     def __dir__(self) -> Iterable[str]:
         methods = object.__dir__(self)
@@ -1276,7 +1276,7 @@ class Open(ReadOnly):
             self.file.name if isinstance(self.file, File) else self.file
         return f'<{__package__}.{self.__class__.__name__} file={filelink!r}>'
 
-    def __pass__(self, buffer: Type[BufferedIOBase], mode: OpenMode) -> Closure:
+    def __open__(self, buffer: Type[BufferedIOBase], mode: OpenMode) -> Closure:
         def init_buffer_instance(
                 *,
                 bufsize:        int                       = DEFAULT_BUFFER_SIZE,
@@ -1573,8 +1573,8 @@ class INI:
 
     def read(
             self,
-            encoding:                Optional[str]               = None,
             *,
+            encoding:                Optional[str]               = None,
             defaults:                Optional[Mapping[str, str]] = None,
             dict_type:               Type[Mapping[str, str]]     = dict,
             allow_no_value:          bool                        = False,
@@ -1617,6 +1617,7 @@ class CSV:
             self,
             dialect:          CSVDialectLike = 'excel',
             *,
+            encoding:         Optional[str]  = None,
             delimiter:        str            = ',',
             quotechar:        Optional[str]  = '"',
             escapechar:       Optional[str]  = None,
@@ -1627,7 +1628,8 @@ class CSV:
             strict:           bool           = False
     ) -> CSVReader:
         return csv.reader(
-            Open(self.file).r(newline=''), dialect,
+            Open(self.file).r(encoding=encoding, newline=''),
+            dialect,
             delimiter       =delimiter,
             quotechar       =quotechar,
             escapechar      =escapechar,
@@ -1700,6 +1702,7 @@ class JSON:
             self,
             obj:            Any,
             *,
+            encoding:       Optional[str]                  = None,
             skipkeys:       bool                           = False,
             ensure_ascii:   bool                           = True,
             check_circular: bool                           = True,
@@ -1712,7 +1715,8 @@ class JSON:
             **kw
     ) -> None:
         return json.dump(
-            obj, Open(self.file).w(),
+            obj,
+            Open(self.file).w(encoding=encoding),
             skipkeys      =skipkeys,
             ensure_ascii  =ensure_ascii,
             check_circular=check_circular,
@@ -1763,7 +1767,9 @@ class YAML:
             sort_keys:          bool                        = True
     ) -> None:
         return yaml.dump_all(
-            [data], Open(self.file).w(), dumper or yaml.Dumper,
+            [data],
+            Open(self.file).w(encoding=encoding),
+            dumper or yaml.Dumper,
             default_style     =default_style,
             default_flow_style=default_flow_style,
             canonical         =canonical,
@@ -1800,7 +1806,9 @@ class YAML:
             sort_keys:          bool                        = True
     ) -> None:
         return yaml.dump_all(
-            documents, Open(self.file).w(), dumper or yaml.Dumper,
+            documents,
+            Open(self.file).w(encoding=encoding),
+            dumper or yaml.Dumper,
             default_style     =default_style,
             default_flow_style=default_flow_style,
             canonical         =canonical,

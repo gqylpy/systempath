@@ -24,7 +24,7 @@ business logic rather than the intricacies of low-level file system operations.
 ────────────────────────────────────────────────────────────────────────────────
 Copyright (c) 2022-2024 GQYLPY <http://gqylpy.com>. All rights reserved.
 
-    @version: 1.2
+    @version: 1.2.1
     @author: 竹永康 <gqylpy@outlook.com>
     @source: https://github.com/gqylpy/systempath
 
@@ -1859,8 +1859,8 @@ class INI:
 
     def read(
             self,
-            encoding:                Optional[str]                     = None,
             *,
+            encoding:                Optional[str]                     = None,
             defaults:                Optional[Mapping[str, str]]       = None,
             dict_type:               Optional[Type[Mapping[str, str]]] = None,
             allow_no_value:          Optional[bool]                    = None,
@@ -1891,8 +1891,8 @@ class CSV:
         "w".
 
     @param encoding
-        Specify the output encoding, usually specified as "UTF-8". The default
-        encoding is based on the platform, call
+        Specify the encoding for opening the file, usually specified as "UTF-8".
+        The default encoding is based on the platform, call
         `locale.getpreferredencoding(False)` to get the current locale encoding.
         See the `codecs` module for a list of supported encodings.
 
@@ -1943,6 +1943,7 @@ class CSV:
             self,
             dialect:          Optional[CSVDialectLike] = None,
             *,
+            encoding:         Optional[str]            = None,
             delimiter:        Optional[str]            = None,
             quotechar:        Optional[str]            = None,
             escapechar:       Optional[str]            = None,
@@ -2017,6 +2018,12 @@ class JSON:
         The Python object you want to convert to JSON format and write to the
         file.
 
+    @param encoding
+        Specify the encoding for opening the file, usually specified as "UTF-8".
+        The default encoding is based on the platform, call
+        `locale.getpreferredencoding(False)` to get the current locale encoding.
+        See the `codecs` module for a list of supported encodings.
+
     @param skipkeys
         If True (default is False), dictionary keys that are not of a basic
         type (str, int, float, bool, None) will be skipped during the encoding
@@ -2072,6 +2079,7 @@ class JSON:
             self,
             obj:            Any,
             *,
+            encoding:       Optional[str]                      = None,
             skipkeys:       Optional[bool]                     = None,
             ensure_ascii:   Optional[bool]                     = None,
             check_circular: Optional[bool]                     = None,
